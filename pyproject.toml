@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "never-jscore"
+version = "1.0.0"
+description = "Fast JavaScript execution in Python using Deno Core (PyExecJS replacement)"
+readme = "READMD.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["javascript", "execjs", "deno", "v8", "js","python","rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/neverl805/never-jscore"
+Repository = "https://github.com/neverl805/never-jscore"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+# 包含类型提示文件
+include = ["never_jscore.pyi", "py.typed"]
