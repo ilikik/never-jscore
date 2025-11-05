@@ -6,7 +6,7 @@
 
 - ⚡ **极致性能**:
   - 使用 Rust + Deno Core (V8 引擎)
-  - thread_local Context 缓存优化
+  - 实例化 Context 复用优化
   - **比 PyExecJS 快 100-300倍**
   - **与 PyMiniRacer 性能相当，部分场景更快**
 - 🔄 **Promise/async 支持**:
@@ -14,7 +14,7 @@
   - 自动等待异步结果
   - **唯一高性能 Promise 方案**（PyMiniRacer 不支持）
 - 📦 **上下文隔离**: 每个 Context 独立的 V8 执行环境，互不干扰
-- 🎯 **PyExecJS 兼容**: API 设计兼容 PyExecJS，可直接替换使用
+- 🎯 **py_mini_racer 兼容**: API 设计类似 py_mini_racer，实例化使用
 - 🧹 **自动内存管理**: 基于 Rust 的自动垃圾回收，无内存泄漏
 - 🛡️ **类型安全**: 提供完整的类型提示（.pyi 文件）
 - 🎮 **JS逆向首选**: 专为 JS 逆向工程优化，支持批量函数调用
@@ -40,29 +40,37 @@ maturin develop --release
 
 ## 快速开始
 
-### 1. 基本用法
+### 1. 基本用法（实例化 Context）
 
 ```python
-import never_jscore as execjs
+import never_jscore
 
-# 一次性执行
-result = execjs.eval("1 + 2 + 3")
+# 创建 JavaScript 执行上下文
+ctx = never_jscore.Context()
+
+# 一次性求值
+result = ctx.evaluate("1 + 2 + 3")
 print(result)  # 6
 
 # 字符串操作
-result = execjs.eval("'Hello'.toUpperCase()")
+result = ctx.evaluate("'Hello'.toUpperCase()")
 print(result)  # HELLO
 
 # 数组操作
-result = execjs.eval("[1, 2, 3].map(x => x * 2)")
+result = ctx.evaluate("[1, 2, 3].map(x => x * 2)")
 print(result)  # [2, 4, 6]
 ```
 
 ### 2. 编译和调用
 
 ```python
+import never_jscore
+
+# 创建上下文
+ctx = never_jscore.Context()
+
 # 编译 JavaScript 代码
-ctx = execjs.compile("""
+ctx.compile("""
     function add(a, b) {
         return a + b;
     }
@@ -80,8 +88,12 @@ print(ctx.call("greet", ["World"]))   # Hello, World!
 ### 3. 异步支持（Promise/async/await）
 
 ```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
 # async 函数
-ctx = execjs.compile("""
+ctx.compile("""
     async function fetchData(id) {
         // 模拟异步操作
         return await Promise.resolve({id: id, name: "User" + id});
@@ -89,16 +101,14 @@ ctx = execjs.compile("""
 """)
 
 # Promise 自动等待
-result = ctx.eval("Promise.resolve(42)")
+result = ctx.evaluate("Promise.resolve(42)")
 print(result)  # 42
-
-
 
 result = ctx.call("fetchData", [123])
 print(result)  # {'id': 123, 'name': 'User123'}
 
 # Promise 链
-result = ctx.eval("""
+result = ctx.evaluate("""
     Promise.resolve(10)
         .then(x => x * 2)
         .then(x => x + 5)
@@ -106,7 +116,7 @@ result = ctx.eval("""
 print(result)  # 25
 
 # Promise.all 并发
-result = ctx.eval("""
+result = ctx.evaluate("""
     Promise.all([
         Promise.resolve(1),
         Promise.resolve(2),
@@ -119,7 +129,10 @@ print(result)  # [1, 2, 3]
 ### 4. 上下文状态管理
 
 ```python
-ctx = execjs.compile("""
+import never_jscore
+
+ctx = never_jscore.Context()
+ctx.compile("""
     var counter = 0;
 
     function increment() {
@@ -139,7 +152,10 @@ print(ctx.call("getCounter", []))  # 2
 ### 5. 复杂对象处理
 
 ```python
-ctx = execjs.compile("""
+import never_jscore
+
+ctx = never_jscore.Context()
+ctx.compile("""
     function processUser(name, age, tags) {
         return {
             name: name,
@@ -162,21 +178,13 @@ print(result)
 # }
 ```
 
-### 6. 从文件加载
+### 6. 性能监控
 
 ```python
-# 从文件编译
-ctx = execjs.compile_file("script.js")
-result = ctx.call("myFunction", [arg1, arg2])
+import never_jscore
 
-# 从文件执行
-result = execjs.eval_file("script.js")
-```
-
-### 7. 性能监控
-
-```python
-ctx = execjs.compile("function compute(n) { return n * n; }")
+ctx = never_jscore.Context()
+ctx.compile("function compute(n) { return n * n; }")
 
 # 执行多次
 for i in range(100):
@@ -193,80 +201,67 @@ ctx.gc()
 ctx.reset_stats()
 ```
 
-### (注意: execjs只能compile一次,并且compile一次之后不可再直接用execjs调用,应当用返回的实例,要重新compile就要del删除掉已产生的实例对象)
-
-```python
-ctx = execjs.compile("""
-    async function fetchData(id) {
-        return await Promise.resolve({id: id, name: "User" + id});
-    }
-""")
-
-result = ctx.eval("""
-    Promise.all([
-        Promise.resolve(1),
-        Promise.resolve(2),
-        Promise.resolve(3)
-    ])
-""")
-print(result)  # [1, 2, 3]
-
-del ctx
-ctx2 = execjs.compile("""
-    async function new_fetchData(id) {
-        return await Promise.resolve({id: id, name: "User" + id});
-    }
-""")
-result = ctx2.call("new_fetchData", [1234567])
-print(result)  # {'id': 123, 'name': 'User123'}
-```
-
-
 ## API 参考
 
-### 模块函数
+### Context 类
 
-#### `compile(code: str) -> Context`
+#### `never_jscore.Context()`
 
-编译 JavaScript 代码并返回执行上下文。
-
-**参数**:
-- `code`: JavaScript 代码字符串
+创建一个新的 JavaScript 执行上下文。
 
 **返回**: Context 对象
 
 **示例**:
 ```python
-ctx = execjs.compile('''
+ctx = never_jscore.Context()
+```
+
+#### `compile(code: str) -> None`
+
+编译 JavaScript 代码并加入全局作用域。
+
+**参数**:
+- `code`: JavaScript 代码字符串
+
+**示例**:
+```python
+ctx.compile('''
     function add(a, b) { return a + b; }
 ''')
 ```
 
-#### `eval(code: str, auto_await: bool = True) -> Any`
+#### `eval(code: str, return_value: bool = False, auto_await: bool = True) -> Any`
 
-一次性执行 JavaScript 代码。
+执行代码并将其加入全局作用域。
+
+**参数**:
+- `code`: JavaScript 代码字符串
+- `return_value`: 是否返回最后表达式的值（默认 False）
+- `auto_await`: 是否自动等待 Promise（默认 True）
+
+**返回**: 如果 return_value=True，返回执行结果；否则返回 None
+
+**示例**:
+```python
+ctx.eval("var x = 10;")  # 添加到全局作用域
+result = ctx.eval("x * 2", return_value=True)  # 返回 20
+```
+
+#### `evaluate(code: str, auto_await: bool = True) -> Any`
+
+执行代码并返回结果（不影响全局作用域）。
 
 **参数**:
 - `code`: JavaScript 代码字符串
 - `auto_await`: 是否自动等待 Promise（默认 True）
 
-**返回**: 执行结果
+**返回**: 表达式的值
 
 **示例**:
 ```python
-result = execjs.eval("1 + 2 + 3")  # 6
-result = execjs.eval("Promise.resolve(42)")  # 42
+result = ctx.evaluate("1 + 2 + 3")  # 6
+result = ctx.evaluate("Promise.resolve(42)")  # 42
 ```
-
-#### `compile_file(path: str) -> Context`
-
-从文件读取并编译 JavaScript 代码。
-
-#### `eval_file(path: str, auto_await: bool = True) -> Any`
-
-从文件读取并执行 JavaScript 代码。
-
-### Context 类
 
 #### `call(name: str, args: list, auto_await: bool = True) -> Any`
 
@@ -284,16 +279,6 @@ result = execjs.eval("Promise.resolve(42)")  # 42
 result = ctx.call("add", [1, 2])
 result = ctx.call("asyncFunc", [arg], auto_await=True)
 ```
-
-#### `eval(code: str, auto_await: bool = True) -> Any`
-
-在当前上下文执行代码。
-
-**参数**:
-- `code`: JavaScript 代码字符串
-- `auto_await`: 是否自动等待 Promise（默认 True）
-
-**返回**: 执行结果
 
 #### `gc() -> None`
 
@@ -331,52 +316,142 @@ Python 和 JavaScript 之间的类型自动转换：
 ctx.call("func", [None, True, 42, 3.14, "hello", [1, 2], {"key": "value"}])
 
 # JavaScript -> Python
-result = execjs.eval("{name: 'John', age: 30}")  # dict
-result = execjs.eval("[1, 2, 3]")  # list
-result = execjs.eval("null")  # None
+result = ctx.evaluate("{name: 'John', age: 30}")  # dict
+result = ctx.evaluate("[1, 2, 3]")  # list
+result = ctx.evaluate("null")  # None
 ```
 
 ## 使用限制
 
-### 多 Context 限制
+### ⚠️ 多 Context 限制（重要！）
 
-⚠️ **重要**: 由于 V8 引擎限制，**不能交叉使用多个 Context 实例**。
+由于 V8 引擎的 thread-local storage 限制和内存管理机制，**多个 Context 必须遵循特定的使用模式**。
+
+#### 限制 1: 不能交叉使用
+
+**一旦创建了第二个 Context，就不能再使用第一个 Context！**
 
 ```python
 # ❌ 错误用法：交叉使用会崩溃
-ctx1 = execjs.compile("function f1() { return 1; }")
-ctx2 = execjs.compile("function f2() { return 2; }")
-ctx1.call("f1", [])  # OK
-ctx2.call("f2", [])  # OK
-ctx1.call("f1", [])  # ❌ 崩溃！
+ctx1 = never_jscore.Context()
+ctx1.compile("function f1() { return 1; }")
+result1 = ctx1.call("f1", [])  # OK
 
-# ✅ 正确用法：单个 Context 包含所有函数
-ctx = execjs.compile("""
-    function f1() { return 1; }
-    function f2() { return 2; }
-""")
-ctx.call("f1", [])  # OK
-ctx.call("f2", [])  # OK
-ctx.call("f1", [])  # OK
+ctx2 = never_jscore.Context()
+ctx2.compile("function f2() { return 2; }")
+result2 = ctx2.call("f2", [])  # OK
+
+result1 = ctx1.call("f1", [])  # ❌ 崩溃！不能回到 ctx1
 ```
 
-**推荐做法**:
-1. **单 Context 模式**（最推荐）: 将所有函数定义在一个 Context 中
-2. **顺序使用**: 用完一个 Context 再创建下一个
-3. **eval() 模式**: 使用 `execjs.eval()` 进行一次性执行
+#### 限制 2: LIFO 删除顺序
 
-详见项目文档 `MULTI_CONTEXT_LIMITATION.md`。
+**多个 Context 必须按 LIFO 顺序删除（后创建先删除）**
+
+```python
+# ❌ 错误：按创建顺序删除会崩溃
+ctx1 = never_jscore.Context()
+ctx2 = never_jscore.Context()
+ctx3 = never_jscore.Context()
+
+del ctx1  # ❌ 崩溃！
+del ctx2
+del ctx3
+
+# ✅ 正确：LIFO 顺序（后进先出）
+ctx1 = never_jscore.Context()
+ctx2 = never_jscore.Context()
+ctx3 = never_jscore.Context()
+
+# 使用最后创建的 Context
+result = ctx3.call("func", [])
+
+# 按逆序删除
+del ctx3  # ✅ 最后创建，最先删除
+del ctx2  # ✅
+del ctx1  # ✅
+
+# ❌ 错误：让 Python 自动清理（顺序不确定）
+# 程序结束时会崩溃
+```
+
+#### 推荐的使用模式
+
+**模式 1: 单 Context 模式（最推荐）**
+
+将所有函数定义在一个 Context 中：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+ctx.compile("""
+    function f1() { return 1; }
+    function f2() { return 2; }
+    function f3() { return 3; }
+""")
+
+# 可以任意调用
+ctx.call("f1", [])  # OK
+ctx.call("f2", [])  # OK
+ctx.call("f1", [])  # OK - 可以重复调用
+```
+
+**模式 2: 顺序使用（用完即删）**
+
+```python
+import never_jscore
+
+# 使用第一个 Context
+ctx1 = never_jscore.Context()
+ctx1.compile("function f1() { return 1; }")
+result = ctx1.call("f1", [])
+del ctx1  # 用完立即删除
+
+# 使用第二个 Context
+ctx2 = never_jscore.Context()
+ctx2.compile("function f2() { return 2; }")
+result = ctx2.call("f2", [])
+del ctx2  # 用完立即删除
+```
+
+**模式 3: LIFO 批量清理（高级用法）**
+
+```python
+import never_jscore
+
+# 创建多个 Context（注意：创建第二个后不能再用第一个）
+ctx1 = never_jscore.Context()
+ctx1.compile("function f1() { return 1; }")
+r1 = ctx1.call("f1", [])  # 在创建 ctx2 之前完成所有操作
+
+ctx2 = never_jscore.Context()
+ctx2.compile("function f2() { return 2; }")
+r2 = ctx2.call("f2", [])  # ctx1 已不可用
+
+ctx3 = never_jscore.Context()
+ctx3.compile("function f3() { return 3; }")
+r3 = ctx3.call("f3", [])  # ctx1, ctx2 已不可用
+
+# LIFO 顺序删除（后进先出）
+del ctx3
+del ctx2
+del ctx1
+```
 
 ## 适用场景
 
 ### JavaScript 逆向分析
 
 ```python
+import never_jscore
+
 # 加载目标网站的加密 JS
 with open("target_crypto.js") as f:
     js_code = f.read()
 
-ctx = execjs.compile(js_code)
+ctx = never_jscore.Context()
+ctx.compile(js_code)
 
 # 调用加密函数
 encrypted = ctx.call("encrypt", [plain_text, key])
@@ -388,19 +463,35 @@ decrypted = ctx.call("decrypt", [cipher_text, key])
 parsed = ctx.call("parseResponse", [response_data])
 ```
 
-### 前端工具集成
+### 使用 Polyfill 支持 Web API
 
 ```python
-# 使用 JavaScript 工具库
-ctx = execjs.compile_file("lodash.min.js")
-result = ctx.call("_.uniq", [[1, 2, 2, 3, 3, 3]])
-print(result)  # [1, 2, 3]
+import never_jscore
+from pathlib import Path
+
+# 读取 polyfill
+polyfill_path = Path("examples/polyfill_example.js")
+polyfill = polyfill_path.read_text(encoding='utf-8')
+
+# 加载 polyfill + 业务代码
+ctx = never_jscore.Context()
+ctx.compile(polyfill + """
+    function encryptData(data) {
+        return btoa(data);  // 现在可以使用 btoa
+    }
+""")
+
+result = ctx.call("encryptData", ["Hello"])
+print(result)  # SGVsbG8=
 ```
 
 ### 异步数据处理
 
 ```python
-ctx = execjs.compile("""
+import never_jscore
+
+ctx = never_jscore.Context()
+ctx.compile("""
     async function processBatch(items) {
         const results = await Promise.all(
             items.map(async item => {
@@ -418,10 +509,11 @@ print(result)  # [2, 4, 6, 8, 10]
 
 ## 性能优化建议
 
-1. **重复执行使用 compile()**: 对于需要多次调用的代码，使用 `compile()` 而不是 `eval()`
+1. **重用 Context**: 对于需要多次调用的代码，创建一个 Context 并复用
 2. **批量处理**: 在 JavaScript 端批量处理数据，减少 Python-JS 调用次数
-3. **避免频繁创建 Context**: 尽可能复用同一个 Context
+3. **单 Context 模式**: 尽可能将所有函数定义在一个 Context 中
 4. **合理使用 auto_await**: 对于不需要等待的同步代码，设置 `auto_await=False` 可略微提升性能
+5. **避免频繁创建 Context**: 创建 Context 有开销，应尽量复用
 
 ## 模块化架构
 
@@ -429,8 +521,8 @@ print(result)  # [2, 4, 6, 8, 10]
 
 ```
 src/
-├── lib.rs        # 模块入口，导出 Python API
-├── context.rs    # Context 实现
+├── lib.rs        # 模块入口，仅导出 Context 类
+├── context.rs    # Context 实现（V8 isolate 封装）
 ├── runtime.rs    # V8/Tokio runtime 管理
 ├── ops.rs        # Deno Core ops 定义
 ├── convert.rs    # Python ↔ JavaScript 类型转换
@@ -440,11 +532,11 @@ src/
 ## 测试
 
 ```bash
-# 基本功能测试
-python test_single_ctx.py
+# 异步功能测试
+python test_async_simple.py
 
-# 模块化测试
-python test_modular.py
+# Polyfill 示例
+python examples/use_polyfill.py
 ```
 
 ## 技术细节
@@ -452,7 +544,7 @@ python test_modular.py
 - **V8 引擎**: 使用 Deno Core 提供的 V8 bindings
 - **Tokio Runtime**: 全局单线程 runtime，支持异步操作
 - **类型转换**: Python ↔ JSON ↔ JavaScript 三层转换
-- **内存管理**: Rust 自动管理，每 100 次执行提示 GC
+- **内存管理**: 使用 `std::mem::forget()` 避免 HandleScope 错误，每 100 次执行提示 GC
 
 ## 许可证
 
@@ -464,11 +556,22 @@ MIT License
 
 ## 相关项目
 
+- [py_mini_racer](https://github.com/sqreen/PyMiniRacer) - Python MiniRacer 实现
 - [PyExecJS](https://github.com/doloopwhile/PyExecJS) - 原 Python ExecJS 实现
 - [Deno](https://github.com/denoland/deno) - 现代 JavaScript/TypeScript 运行时
 - [PyO3](https://github.com/PyO3/pyo3) - Rust Python bindings
 
 ## 更新日志
+
+### v2.0.0
+
+- 🔄 **架构重构**: 改为 py_mini_racer 风格的实例化 API
+- ✅ 修复 HandleScope 错误：使用 `std::mem::forget()` 管理 v8::Global
+- ✅ 明确 LIFO 清理顺序要求
+- ✅ 完善多 Context 使用限制说明
+- ✅ 新增 `compile()` 便捷方法
+- ✅ 新增 `evaluate()` 独立求值方法
+- ✅ 更新所有示例和文档
 
 ### v0.1.0
 

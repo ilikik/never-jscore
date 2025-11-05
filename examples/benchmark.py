@@ -18,7 +18,7 @@ with open('demo.js','r',encoding='utf-8')as f:
     js_code2 = f.read()
 
 arr = list(range(100))
-iterations = 100
+iterations = 1
 
 print("=== execjs ===")
 # ctx1 = execjs.compile(js_code)
@@ -44,7 +44,6 @@ end = time.time()
 print(f"get_token() {iterations}次耗时: {end - start:.4f}s")
 
 
-
 print("\n=== py_mini_racer ===")
 ctx2 = py_mini_racer.MiniRacer()
 # ctx2.eval(js_code)
@@ -62,6 +61,7 @@ ctx2 = py_mini_racer.MiniRacer()
 # print(f"sumArray() {iterations}次耗时: {end - start:.4f}s")
 
 ctx2.eval(js_code2)
+ctx2.eval(js_code)
 start = time.time()
 for _ in range(iterations):
     # ctx2.call('get_token', '5fffa6895ac0748d8c76e61c1f4066d73d6501cf63c3221234')

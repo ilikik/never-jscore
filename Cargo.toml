@@ -1,19 +1,21 @@
 [package]
 name = "never_jscore"
-version = "1.0.0"
-edition = "2024"
+version = "2.0.0"
+edition = "2021"
+authors = ["never_jscore contributors"]
+description = "High-performance Python JavaScript execution engine based on Deno Core (V8) with full Promise/async support"
+license = "MIT"
+repository = "https://github.com/yourusername/never-jscore"
+keywords = ["javascript", "v8", "deno", "execjs", "python"]
+categories = ["development-tools"]
 
 [lib]
 name = "never_jscore"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "demo"
-path = "src/lib.rs"
-
 [dependencies]
 deno_core = "0.365.0"
 anyhow = "1.0.100"
-tokio = { version = "1.48", features = ["rt", "time", "macros"] }
+tokio = { version = "1.48", features = ["rt","time", "macros"] }
 serde_json = "1.0"
 pyo3 = { version = "0.27.1", features = ["extension-module", "abi3-py38"] }

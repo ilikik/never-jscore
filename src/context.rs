@@ -12,55 +12,91 @@ use crate::ops;
 use crate::runtime::get_tokio_runtime;
 use crate::storage::ResultStorage;
 
+// ============================================
+// 权限容器 - Web扩展需要
+// ============================================
+
+/// 权限容器，用于控制Web API的权限
+///
+/// 在JS逆向场景中，我们允许所有权限
+struct PermissionsContainer;
+
+// impl deno_web::TimersPermission for PermissionsContainer {
+//     fn allow_hrtime(&mut self) -> bool {
+//         true  // 允许高精度时间
+//     }
+// }
+
 /// JavaScript 执行上下文
 ///
 /// 每个 Context 包含一个独立的 V8 isolate 和 JavaScript 运行时环境。
 /// 支持 Promise 和 async/await，默认自动等待 Promise 结果。
+///
+/// 使用方式类似 py_mini_racer：
+/// ```python
+/// ctx = never_jscore.Context()
+/// ctx.eval("function add(a, b) { return a + b; }")
+/// result = ctx.call("add", [1, 2])
+/// ```
 #[pyclass(unsendable)]
 pub struct Context {
     runtime: RefCell<JsRuntime>,
     result_storage: Rc<ResultStorage>,
-    init_code: String,
-    compiled: RefCell<bool>,
     exec_count: RefCell<usize>,
 }
 
 impl Context {
-    /// 创建新的 Context
-    pub fn new(code: String) -> PyResult<Self> {
+    /// 创建新的空 Context
+    pub fn new() -> PyResult<Self> {
         let storage = Rc::new(ResultStorage::new());
 
         let runtime = JsRuntime::new(RuntimeOptions {
-            extensions: vec![ops::pyexecjs_ext::init(storage.clone())],
+            extensions: vec![
+                // 只有自定义的扩展，不使用 Deno 扩展
+                ops::pyexecjs_ext::init(storage.clone()),
+            ],
             ..Default::default()
         });
 
         Ok(Context {
             runtime: RefCell::new(runtime),
             result_storage: storage,
-            init_code: code,
-            compiled: RefCell::new(false),
             exec_count: RefCell::new(0),
         })
     }
 
-    /// 确保初始化代码已编译
-    fn ensure_compiled(&self) -> Result<()> {
-        if !*self.compiled.borrow() && !self.init_code.is_empty() {
-            let mut runtime = self.runtime.borrow_mut();
-            runtime
-                .execute_script("<compile>", self.init_code.clone())
-                .map_err(|e| anyhow!("Compile error: {:?}", e))?;
-            *self.compiled.borrow_mut() = true;
+    /// 执行脚本，将代码加入全局作用域（不返回值）
+    ///
+    /// 这个方法会直接执行代码并将定义的函数/变量加入全局作用域
+    fn exec_script(&self, code: &str) -> Result<()> {
+        let mut runtime = self.runtime.borrow_mut();
+
+        // execute_script returns a v8::Global<v8::Value>
+        // We don't need the result, so we leak it to avoid drop issues
+        let result = runtime
+            .execute_script("<exec>", code.to_string())
+            .map_err(|e| anyhow!("Execution error: {:?}", e))?;
+
+        // Leak the v8::Global to avoid HandleScope issues on drop
+        std::mem::forget(result);
+
+        // 更新执行计数
+        let mut count = self.exec_count.borrow_mut();
+        *count += 1;
+
+        // 每 100 次执行后提示 GC
+        if *count % 100 == 0 {
+            std::hint::black_box(());
         }
+
         Ok(())
     }
 
-    /// 执行 JavaScript 代码
+    /// 执行 JavaScript 代码并返回结果
     ///
     /// 根据 auto_await 参数决定是否自动等待 Promise。
+    /// 注意：这个方法用于求值，代码在IIFE中执行，不会影响全局作用域
     fn execute_js(&self, code: &str, auto_await: bool) -> Result<String> {
-        self.ensure_compiled()?;
         self.result_storage.clear();
 
         if auto_await {
@@ -102,9 +138,12 @@ impl Context {
                     code_json
                 );
 
-                runtime
+                let _result = runtime
                     .execute_script("<eval_async>", wrapped_code)
                     .map_err(|e| anyhow!("Execution failed: {:?}", e))?;
+
+                // Leak the v8::Global to avoid HandleScope issues
+                std::mem::forget(_result);
 
                 // 运行 event loop 等待 Promise 完成
                 runtime
@@ -160,9 +199,12 @@ impl Context {
                 code_json
             );
 
-            runtime
+            let _result = runtime
                 .execute_script("<eval_sync>", wrapped_code)
                 .map_err(|e| anyhow!("Execution failed: {:?}", e))?;
+
+            // Leak the v8::Global to avoid HandleScope issues
+            std::mem::forget(_result);
 
             let result = self
                 .result_storage
@@ -192,9 +234,8 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        // 清理资源
-        self.result_storage.clear();
-        *self.compiled.borrow_mut() = false;
+        // 不做任何操作，让 Rust 自动清理
+        // V8 runtime 会在 RefCell 销毁时自动清理
     }
 }
 
@@ -204,6 +245,58 @@ impl Drop for Context {
 
 #[pymethods]
 impl Context {
+    /// Python构造函数
+    ///
+    /// 创建一个新的JavaScript执行上下文
+    ///
+    /// Example:
+    ///     ```python
+    ///     import never_jscore
+    ///
+    ///     # 创建空上下文
+    ///     ctx = never_jscore.Context()
+    ///
+    ///     # 逐步添加代码
+    ///     ctx.eval("function add(a, b) { return a + b; }")
+    ///     ctx.eval("function multiply(a, b) { return a * b; }")
+    ///
+    ///     # 调用函数
+    ///     result = ctx.call("add", [1, 2])
+    ///     ```
+    #[new]
+    fn py_new() -> PyResult<Self> {
+        crate::runtime::ensure_v8_initialized();
+        Self::new()
+    }
+
+    /// 编译JavaScript代码（便捷方法）
+    ///
+    /// 这是一个便捷方法，等价于 eval(code)。
+    /// 执行代码并将函数/变量加入全局作用域。
+    ///
+    /// Args:
+    ///     code: JavaScript 代码字符串
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Example:
+    ///     ```python
+    ///     ctx = never_jscore.Context()
+    ///     ctx.compile('''
+    ///         function add(a, b) { return a + b; }
+    ///         function sub(a, b) { return a - b; }
+    ///     ''')
+    ///     result = ctx.call("add", [5, 3])
+    ///     ```
+    #[pyo3(signature = (code))]
+    pub fn compile(&self, code: String) -> PyResult<()> {
+        // 直接调用 exec_script，不经过 eval
+        self.exec_script(&code)
+            .map_err(|e| PyException::new_err(format!("Compile error: {}", e)))?;
+        Ok(())
+    }
+
     /// 调用 JavaScript 函数
     ///
     /// Args:
@@ -249,16 +342,64 @@ impl Context {
         json_to_python(py, &result)
     }
 
-    /// 在当前上下文执行代码
+    /// 执行代码并将其加入全局作用域
+    ///
+    /// 这个方法会执行JavaScript代码，并将定义的函数/变量保留在全局作用域中。
+    /// 类似 py_mini_racer 的 eval() 方法。
+    ///
+    /// Args:
+    ///     code: JavaScript 代码
+    ///     return_value: 是否返回最后一个表达式的值（默认 False）
+    ///     auto_await: 是否自动等待 Promise（默认 True）
+    ///
+    /// Returns:
+    ///     如果 return_value=True，返回最后一个表达式的值；否则返回 None
+    ///
+    /// Example:
+    ///     ```python
+    ///     ctx = Context()
+    ///     ctx.eval("function add(a, b) { return a + b; }")
+    ///     result = ctx.call("add", [1, 2])  # 可以调用，因为add在全局作用域
+    ///     ```
+    #[pyo3(signature = (code, return_value=false, auto_await=None))]
+    pub fn eval<'py>(
+        &self,
+        py: Python<'py>,
+        code: String,
+        return_value: bool,
+        auto_await: Option<bool>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if return_value {
+            // 需要返回值：使用包装的execute_js
+            let result_json = self
+                .execute_js(&code, auto_await.unwrap_or(true))
+                .map_err(|e| PyException::new_err(format!("Eval error: {}", e)))?;
+
+            let result: JsonValue = serde_json::from_str(&result_json)
+                .map_err(|e| PyException::new_err(format!("JSON parse error: {}", e)))?;
+
+            json_to_python(py, &result)
+        } else {
+            // 不需要返回值：直接执行脚本，加入全局作用域
+            self.exec_script(&code)
+                .map_err(|e| PyException::new_err(format!("Eval error: {}", e)))?;
+
+            Ok(py.None().into_bound(py))
+        }
+    }
+
+    /// 执行代码并返回结果（不影响全局作用域）
+    ///
+    /// 这个方法用于求值，代码在独立的作用域中执行，不会影响全局变量。
     ///
     /// Args:
     ///     code: JavaScript 代码
     ///     auto_await: 是否自动等待 Promise（默认 True）
     ///
     /// Returns:
-    ///     执行结果，自动转换为 Python 对象
+    ///     表达式的值
     #[pyo3(signature = (code, auto_await=None))]
-    pub fn eval<'py>(
+    pub fn evaluate<'py>(
         &self,
         py: Python<'py>,
         code: String,
@@ -266,7 +407,7 @@ impl Context {
     ) -> PyResult<Bound<'py, PyAny>> {
         let result_json = self
             .execute_js(&code, auto_await.unwrap_or(true))
-            .map_err(|e| PyException::new_err(format!("Eval error: {}", e)))?;
+            .map_err(|e| PyException::new_err(format!("Evaluate error: {}", e)))?;
 
         let result: JsonValue = serde_json::from_str(&result_json)
             .map_err(|e| PyException::new_err(format!("JSON parse error: {}", e)))?;

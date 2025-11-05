@@ -1,10 +1,11 @@
 """
-PyExecJS-RS - 基于 Deno Core 的 JavaScript 运行时
+never_jscore - 基于 Deno Core 的 JavaScript 运行时
 
 完整支持 Promise 和 async/await，适合 JS 逆向分析。
+py_mini_racer 风格的实例化 API。
 """
 
-from typing import Any, List, Union
+from typing import Any, List, Union, Optional
 
 class Context:
     """
@@ -13,24 +14,122 @@ class Context:
     每个 Context 包含一个独立的 V8 isolate 和 JavaScript 运行时环境。
     默认自动等待 Promise，可以无缝调用异步 JavaScript 函数。
 
-    注意：由于 V8 限制，多个 Context 不能交叉使用。
-    建议在一个 Context 中定义所有需要的函数。
+    ⚠️ 重要限制:
+    - 创建第二个 Context 后，不能再使用第一个 Context
+    - 多个 Context 必须按 LIFO 顺序删除（后创建先删除）
+    - 推荐使用单 Context 模式，将所有函数定义在一个 Context 中
 
     Example:
-        >>> # 同步函数
-        >>> ctx = compile("function add(a, b) { return a + b; }")
+        >>> # 基本用法
+        >>> ctx = Context()
+        >>> ctx.compile("function add(a, b) { return a + b; }")
         >>> result = ctx.call("add", [1, 2])
         >>> print(result)
         3
 
         >>> # 异步函数（自动等待）
-        >>> ctx = compile("async function asyncAdd(a, b) { return a + b; }")
+        >>> ctx = Context()
+        >>> ctx.compile("async function asyncAdd(a, b) { return a + b; }")
         >>> result = ctx.call("asyncAdd", [5, 3])
         >>> print(result)
         8
+
+        >>> # Promise
+        >>> ctx = Context()
+        >>> result = ctx.evaluate("Promise.resolve(42)")
+        >>> print(result)
+        42
     """
 
-    def call(self, name: str, args: List[Any], auto_await: bool = True) -> Any:
+    def __init__(self) -> None:
+        """
+        创建一个新的 JavaScript 执行上下文
+        """
+        ...
+
+    def compile(self, code: str) -> None:
+        """
+        编译 JavaScript 代码并加入全局作用域
+
+        Args:
+            code: JavaScript 代码字符串
+
+        Raises:
+            Exception: 当代码编译失败时
+
+        Example:
+            >>> ctx = Context()
+            >>> ctx.compile('''
+            ...     function add(a, b) { return a + b; }
+            ...     function multiply(a, b) { return a * b; }
+            ... ''')
+            >>> ctx.call("add", [1, 2])
+            3
+        """
+        ...
+
+    def eval(
+        self,
+        code: str,
+        return_value: bool = False,
+        auto_await: Optional[bool] = None
+    ) -> Any:
+        """
+        执行代码并将其加入全局作用域
+
+        Args:
+            code: JavaScript 代码字符串
+            return_value: 是否返回最后一个表达式的值（默认 False）
+            auto_await: 是否自动等待 Promise（默认 True）
+
+        Returns:
+            如果 return_value=True，返回最后表达式的值；否则返回 None
+
+        Raises:
+            Exception: 当代码执行失败时
+
+        Example:
+            >>> ctx = Context()
+            >>> ctx.eval("var x = 10;")  # 添加到全局作用域
+            >>> result = ctx.eval("x * 2", return_value=True)
+            >>> print(result)
+            20
+        """
+        ...
+
+    def evaluate(self, code: str, auto_await: Optional[bool] = None) -> Any:
+        """
+        执行代码并返回结果（不影响全局作用域）
+
+        Args:
+            code: JavaScript 代码字符串
+            auto_await: 是否自动等待 Promise（默认 True）
+
+        Returns:
+            表达式的值，自动转换为 Python 对象
+
+        Raises:
+            Exception: 当代码执行失败时
+
+        Example:
+            >>> ctx = Context()
+            >>> result = ctx.evaluate("1 + 2 + 3")
+            >>> print(result)
+            6
+
+            >>> # Promise（自动等待）
+            >>> result = ctx.evaluate("Promise.resolve(42)")
+            >>> print(result)
+            42
+        """
+        ...
+
+    def call(
+        self,
+        name: str,
+        args: List[Any],
+        auto_await: Optional[bool] = None
+    ) -> Any:
         """
         调用 JavaScript 函数（支持 Promise）
 
@@ -46,38 +145,11 @@ class Context:
             Exception: 当函数调用失败时
 
         Example:
-            >>> ctx = compile("async function decrypt(data) { return data.split('').reverse().join(''); }")
+            >>> ctx = Context()
+            >>> ctx.compile("async function decrypt(data) { return data.split('').reverse().join(''); }")
             >>> result = ctx.call("decrypt", ["olleh"])
             >>> print(result)
             hello
-        """
-        ...
-
-    def eval(self, code: str, auto_await: bool = True) -> Any:
-        """
-        在当前上下文中执行 JavaScript 代码（支持 Promise）
-
-        Args:
-            code: JavaScript 代码字符串
-            auto_await: 是否自动等待 Promise（默认 True）
-
-        Returns:
-            执行结果，自动转换为 Python 对象
-
-        Raises:
-            Exception: 当代码执行失败时
-
-        Example:
-            >>> # 同步执行
-            >>> ctx = compile("var x = 10;")
-            >>> result = ctx.eval("x * 2")
-            >>> print(result)
-            20
-
-            >>> # Promise（自动等待）
-            >>> result = ctx.eval("Promise.resolve(42)")
-            >>> print(result)
-            42
         """
         ...
 
@@ -105,119 +177,14 @@ class Context:
         """
         ...
 
-def compile(code: str) -> Context:
-    """
-    编译 JavaScript 代码并返回执行上下文
-
-    Args:
-        code: JavaScript 代码字符串
-
-    Returns:
-        Context 对象，可用于调用函数和执行代码
-
-    Raises:
-        Exception: 当代码编译失败时
-
-    Example:
-        >>> ctx = compile('''
-        ...     function greet(name) {
-        ...         return "Hello, " + name + "!";
-        ...     }
-        ... ''')
-        >>> result = ctx.call("greet", ["World"])
-        >>> print(result)
-        Hello, World!
-    """
-    ...
-
-def eval(code: str, auto_await: bool = True) -> Any:
-    """
-    直接执行 JavaScript 代码并返回结果（支持 Promise）
-
-    默认自动等待 Promise。适合执行简单的一次性代码。
-    对于需要多次调用的场景，建议使用 compile() + Context.call()。
-
-    Args:
-        code: JavaScript 代码字符串
-        auto_await: 是否自动等待 Promise（默认 True）
-
-    Returns:
-        执行结果，自动转换为 Python 对象
-
-    Raises:
-        Exception: 当代码执行失败时
-
-    Example:
-        >>> # 同步代码
-        >>> result = eval("1 + 2 + 3")
-        >>> print(result)
-        6
-
-        >>> # Promise（自动等待）
-        >>> result = eval("Promise.resolve(42)")
-        >>> print(result)
-        42
-
-        >>> # async 函数
-        >>> result = eval("(async () => { return await Promise.resolve(100); })()")
-        >>> print(result)
-        100
-    """
-    ...
-
-def compile_file(path: str) -> Context:
-    """
-    从文件读取并编译 JavaScript 代码
-
-    Args:
-        path: JavaScript 文件路径
-
-    Returns:
-        Context 对象
-
-    Raises:
-        Exception: 当文件读取或编译失败时
-
-    Example:
-        >>> # 假设 script.js 包含: function add(a, b) { return a + b; }
-        >>> ctx = compile_file("script.js")
-        >>> result = ctx.call("add", [5, 3])
-        >>> print(result)
-        8
-    """
-    ...
-
-def eval_file(path: str, auto_await: bool = True) -> Any:
-    """
-    从文件读取并执行 JavaScript 代码（支持 Promise）
-
-    Args:
-        path: JavaScript 文件路径
-        auto_await: 是否自动等待 Promise（默认 True）
-
-    Returns:
-        执行结果
-
-    Raises:
-        Exception: 当文件读取或执行失败时
-
-    Example:
-        >>> result = eval_file("script.js")
-        >>> print(result)
-    """
-    ...
-
 # 类型别名
 JSValue = Union[None, bool, int, float, str, List[Any], dict[str, Any]]
 """JavaScript 值的 Python 类型表示"""
 
-__version__: str
+__version__: str = "2.0.0"
 """模块版本号"""
 
 __all__ = [
     "Context",
-    "compile",
-    "eval",
-    "compile_file",
-    "eval_file",
+    "JSValue",
 ]
