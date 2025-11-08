@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
-        target: [x86_64]  # aarch64 需要 QEMU，编译时间过长，可选
+        python-version: [ '3.11' ]
+        target: [ x86_64 ]  # aarch64 需要 QEMU，编译时间过长，可选
 
     steps:
       - uses: actions/checkout@v4
@@ -62,9 +62,16 @@ jobs:
           manylinux: auto
           # 使用 sccache 加速编译
           sccache: 'true'
-          # 避免从源码编译 V8
+          # 安装编译依赖并避免从源码编译 V8
           before-script-linux: |
+            # 安装必要的编译工具 (manylinux 容器中)
+            yum install -y gcc gcc-c++ make cmake libffi-devel openssl-devel || \
+            dnf install -y gcc gcc-c++ make cmake libffi-devel openssl-devel || \
+            apt-get update && apt-get install -y build-essential cmake libffi-dev libssl-dev || true
+
+            # 禁止从源码编译 V8
             export V8_FROM_SOURCE=0
+            export CARGO_NET_GIT_FETCH_WITH_CLI=true
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -79,7 +86,7 @@ jobs:
     runs-on: macos-13  # 使用 Intel Mac，编译更稳定
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: [ '3.11' ]
 
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +100,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Install build dependencies (macOS)
+        run: |
+          # 确保 Xcode Command Line Tools 已安装
+          xcode-select --install 2>/dev/null || true
+          # 安装可能需要的其他依赖
+          brew install cmake pkg-config || true
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.4
@@ -109,6 +123,10 @@ jobs:
           target: universal2-apple-darwin
           args: --release --strip --out dist -i python${{ matrix.python-version }}
           sccache: 'true'
+        env:
+          # macOS 特定环境变量
+          MACOSX_DEPLOYMENT_TARGET: '10.12'
+          V8_FROM_SOURCE: '0'
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -123,8 +141,8 @@ jobs:
     runs-on: windows-2022  # 使用较新的 Windows runner
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
-        target: [x64]
+        python-version: [ '3.11' ]
+        target: [ x64 ]
 
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +155,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install MSVC Build Tools
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.4
@@ -153,6 +176,12 @@ jobs:
           target: x86_64-pc-windows-msvc
           args: --release --strip --out dist -i python${{ matrix.python-version }}
           sccache: 'true'
+        env:
+          # Windows 特定环境变量
+          V8_FROM_SOURCE: '0'
+          # 确保使用 MSVC 链接器
+          CC: cl.exe
+          CXX: cl.exe
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
