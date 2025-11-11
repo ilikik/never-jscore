@@ -69,7 +69,7 @@ for _ in range(iterations):
 end = time.time()
 print(f"get_token() {iterations}次耗时: {end - start:.4f}s")
 
-
+print("\n=== never_jscore ===")
 ctx3 = never_jscore.Context()
 ctx3.compile(js_code2)
 start = time.time()

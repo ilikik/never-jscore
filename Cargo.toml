@@ -1,6 +1,6 @@
 [package]
 name = "never_jscore"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 authors = ["never_jscore contributors"]
 description = "High-performance Python JavaScript execution engine based on Deno Core (V8) with full Promise/async support"
@@ -14,12 +14,11 @@ name = "never_jscore"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-deno_core = "0.365.0"
+deno_core = "0.367.0"
 anyhow = "1.0.100"
 tokio = { version = "1.48", features = ["rt","time", "macros"] }
 serde_json = "1.0"
 pyo3 = { version = "0.27.1", features = ["extension-module", "abi3-py38"] }
-
 # Crypto libraries for JS reverse engineering
 base64 = "0.22"
 md-5 = "0.10"
@@ -32,3 +31,9 @@ rand = "0.8"
 # Encoding libraries
 urlencoding = "2.1"
 percent-encoding = "2.3"
+
+# HTTP client for fetch API
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# Thread-safe static variables
+lazy_static = "1.4"

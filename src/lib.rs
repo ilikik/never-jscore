@@ -7,6 +7,8 @@ mod crypto_ops;
 mod encoding_ops;
 mod timer_ops;
 mod worker_ops;
+mod fs_ops;
+mod fetch_ops;
 
 use pyo3::prelude::*;
 

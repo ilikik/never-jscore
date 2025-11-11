@@ -1,6 +1,6 @@
 # never_jscore 中文文档
 
-基于 Deno Core (V8) 的高性能 Python JavaScript 执行引擎，**专为 JS 逆向工程优化**。
+基于 Deno Core (V8) 的高性能 Python JavaScript 执行引擎，**专为 JS 逆向工程和补环境优化**。
 努力成为PyExecJS上位替代品
 
 ## 项目特点
@@ -14,13 +14,19 @@
   - 完整支持 Promise 和 async/await
   - 自动等待异步结果
   - **唯一高性能 Promise 方案**（PyMiniRacer 不支持）
-- 🌐 **内置 Web API 扩展** (v2.0+):
-  - ✅ **Crypto APIs**: Base64 (btoa/atob)、MD5、SHA1/256/512、HMAC、Hex 编解码
-  - ✅ **URL 编码**: encodeURIComponent、decodeURIComponent、encodeURI、decodeURI
-  - ✅ **定时器**: setTimeout、setInterval（立即执行版本，用于 API 检测）
-  - ✅ **Web Workers**: Worker API（单线程模拟版本，用于兼容检测）
+- 🌐 **完整 Web API 扩展** (v2.2.0):
+  - ✅ **Node.js APIs**: require()、fs、path、fetch()
+  - ✅ **浏览器存储**: localStorage、sessionStorage
+  - ✅ **浏览器环境(简易实现)**: navigator、location、document、window、screen
+  - ✅ **URL 处理**: URL、URLSearchParams
+  - ✅ **表单数据**: FormData
+  - ✅ **事件系统**: Event、EventTarget
+  - ✅ **网络请求**: fetch()、XMLHttpRequest
+  - ✅ **Crypto APIs**: Base64、MD5、SHA1/256/512、HMAC、Hex
+  - ✅ **URL 编码**: encodeURIComponent、encodeURI 等
+  - ✅ **定时器**: setTimeout、setInterval（立即执行版本）
   - ✅ **随机数**: crypto.randomUUID()、crypto.getRandomValues()
-  - 🎯 专为 JS 逆向设计，无需额外 polyfill
+  - 🎯 专为 JS 逆向和补环境设计，无需额外 polyfill
 - 📦 **上下文隔离**: 每个 Context 独立的 V8 执行环境，互不干扰
 - 🎯 **py_mini_racer 兼容**: API 设计类似 py_mini_racer，实例化使用
 - 🧹 **自动内存管理**: 基于 Rust 的自动垃圾回收，无内存泄漏
@@ -30,15 +36,19 @@
 ## 特性对比表
 
 | 特性 | never_jscore | PyExecJS | PyMiniRacer | js2py | dukpy |
-|------|-----------|----------|-------------|-------|-------|
-| 引擎 | V8  | Node/V8等 | V8 | 纯Python | Duktape |
-| Promise | ✅ 完整 | ❌ | ⚠️ 有限 | ❌ | ❌ |
-| async/await | ✅ | ❌ | ⚠️ | ❌ | ❌ |
-| 性能 | ⚡⚡⚡⚡⚡ | ⚡⚡ | ⚡⚡⚡⚡⚡ | ⚡ | ⚡⚡⚡ |
-| 安装难度 | 简单 | 需Node.js | 简单 | 简单 | 简单 |
-| 上下文复用 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 类型转换 | 自动 | 自动 | 自动 | 自动 | 自动 |
-| ES6+ | ✅ 完整 | ✅ | ✅ | ⚠️ 部分 | ⚠️ 部分 |
+|------|--------------|----------|-------------|-------|-------|
+| 引擎 | V8           | Node/V8等 | V8 | 纯Python | Duktape |
+| Promise | ✅ 完整         | ❌ | ⚠️ 有限 | ❌ | ❌ |
+| async/await | ✅            | ❌ | ⚠️ | ❌ | ❌ |
+| require() | ✅ 完整         | ✅ | ❌ | ❌ | ❌ |
+| fetch() | ✅            | ❌ | ❌ | ❌ | ❌ |
+| localStorage | ✅            | ❌ | ❌ | ❌ | ❌ |
+| 浏览器环境 | ️ ⚠️大部分      | ❌ | ❌ | ⚠️ 部分 | ❌ |
+| 性能 | ⚡⚡⚡⚡⚡        | ⚡⚡ | ⚡⚡⚡⚡⚡ | ⚡ | ⚡⚡⚡ |
+| 安装难度 | 简单           | 需Node.js | 简单 | 简单 | 简单 |
+| 上下文复用 | ✅            | ✅ | ✅ | ✅ | ✅ |
+| 类型转换 | 自动           | 自动 | 自动 | 自动 | 自动 |
+| ES6+ | ✅ 完整         | ✅ | ✅ | ⚠️ 部分 | ⚠️ 部分 |
 
 ---
 
@@ -51,7 +61,10 @@ A: PyMiniRacer 是 V8 的直接绑定，开销最小。never_jscore 使用 rust�
 A: 当你需要:
 - Promise/async 支持（现代 JS 库）
 - 高性能 + Rust 稳定性
-- 批量函数调用
+- 完整的 Node.js 环境（require、fs、path）
+- 浏览器环境模拟（补环境）
+- fetch() 网络请求
+- localStorage/sessionStorage
 - JS 逆向工程
 
 ### Q: PyExecJS 为什么这么慢？
@@ -60,11 +73,15 @@ A: PyExecJS 通过进程调用外部 JS 运行时，每次都有进程通信开�
 
 
 ## 可用测试文件
-- [benchmark.py](examples/benchmark.py)
-- [test_async_simple.py](test_async_simple.py)
-- [test_extensions.py](test_extensions.py)
-- [test_new_apis.py](test_new_apis.py)
-- [use_polyfill.py](examples/use_polyfill.py)
+- [benchmark.py](examples/benchmark.py) - 性能基准测试
+- [test_async_simple.py](tests/test_async_simple.py) - 异步功能测试
+- [test_extensions.py](tests/test_extensions.py) - 扩展 API 测试
+- [test_new_apis.py](tests/test_new_apis.py) - 新 API 测试
+- [test_all_features.py](tests/test_all_features.py) - 完整功能测试套件
+- [test_browser_apis.py](tests/test_browser_apis.py) - 浏览器 API 测试
+- [test_high_priority_apis.py](tests/test_high_priority_apis.py) - 高优先级 API 测试
+- [test_wasm.py](tests/test_wasm.py) - WebAssembly 测试
+- [use_polyfill.py](examples/use_polyfill.py) - Polyfill 使用示例
 
 
 
@@ -516,6 +533,424 @@ del ctx2
 del ctx1
 ```
 
+## v2.2.0 新功能：Node.js 和浏览器 API
+
+### 1. require() - CommonJS 模块系统
+
+完整的 Node.js 模块解析实现，支持相对路径、node_modules、package.json：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+# 创建测试模块
+with open('my_module.js', 'w') as f:
+    f.write('''
+        module.exports = {
+            add: function(a, b) { return a + b; },
+            version: '1.0.0'
+        };
+    ''')
+
+# 使用 require() 加载模块
+result = ctx.evaluate("""
+    const myModule = require('./my_module.js');
+    myModule.add(10, 20)
+""")
+print(result)  # 30
+
+# 使用内置模块 fs 和 path
+ctx.compile("""
+    const fs = require('fs');
+    const path = require('path');
+
+    function readConfig() {
+        const filePath = path.join('.', 'config.json');
+        if (fs.existsSync(filePath)) {
+            return fs.readFileSync(filePath);
+        }
+        return '{}';
+    }
+""")
+```
+
+**支持的功能**：
+- ✅ 相对路径：`./module.js`, `../lib/utils.js`
+- ✅ 绝对路径：`/path/to/module.js`
+- ✅ node_modules 查找（递归向上）
+- ✅ package.json 主入口解析
+- ✅ 自动扩展名（`.js`, `.json`）
+- ✅ 目录入口（`index.js`）
+- ✅ 模块缓存（`require.cache`）
+
+**内置模块**：
+- `fs` - 文件系统操作
+- `path` - 路径处理
+
+### 2. fetch() - HTTP 网络请求
+
+现代 HTTP API，兼容浏览器标准：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+# GET 请求
+result = ctx.evaluate("""
+    (async () => {
+        const response = await fetch('https://api.github.com/users/github');
+        const data = await response.json();
+        return {
+            status: response.status,
+            username: data.login,
+            followers: data.followers
+        };
+    })()
+""")
+print(result)
+
+# POST 请求
+result = ctx.evaluate("""
+    (async () => {
+        const response = await fetch('https://httpbin.org/post', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer token123'
+            },
+            body: JSON.stringify({
+                username: 'test',
+                password: 'pass'
+            }),
+            timeout: 30000
+        });
+
+        const data = await response.json();
+        return data;
+    })()
+""")
+```
+
+**支持的功能**：
+- ✅ GET/POST/PUT/DELETE/PATCH 等所有 HTTP 方法
+- ✅ 自定义请求头
+- ✅ JSON 自动序列化/反序列化
+- ✅ Response 对象（`text()`, `json()`, `blob()`, `arrayBuffer()`）
+- ✅ 状态码和状态文本
+- ✅ 超时控制
+
+### 3. localStorage / sessionStorage
+
+浏览器存储 API，用于补环境：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+# localStorage - 持久化存储
+ctx.eval("""
+    localStorage.setItem('token', 'abc123');
+    localStorage.setItem('user', JSON.stringify({name: 'John', id: 123}));
+""")
+
+# 获取值
+token = ctx.evaluate("localStorage.getItem('token')")
+print(token)  # 'abc123'
+
+# sessionStorage - 会话存储
+ctx.eval("""
+    sessionStorage.setItem('sessionId', '999');
+""")
+
+# 完整示例
+result = ctx.evaluate("""
+    // 存储用户偏好
+    localStorage.setItem('theme', 'dark');
+    localStorage.setItem('language', 'zh-CN');
+
+    // 读取偏好
+    const preferences = {
+        theme: localStorage.getItem('theme'),
+        language: localStorage.getItem('language'),
+        itemCount: localStorage.length
+    };
+
+    JSON.stringify(preferences);
+""")
+print(result)  # {"theme":"dark","language":"zh-CN","itemCount":2}
+```
+
+**API 方法**：
+- `setItem(key, value)` - 设置值
+- `getItem(key)` - 获取值（不存在返回 null）
+- `removeItem(key)` - 删除键
+- `clear()` - 清空所有
+- `key(index)` - 按索引获取键名
+- `length` - 获取键数量
+
+### 4. 浏览器环境对象
+
+模拟完整的浏览器环境（补环境必备）：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+# navigator - 浏览器信息
+result = ctx.evaluate("""
+    JSON.stringify({
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+        onLine: navigator.onLine,
+        cookieEnabled: navigator.cookieEnabled,
+        hardwareConcurrency: navigator.hardwareConcurrency
+    })
+""")
+print(result)
+# {"userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36","platform":"Win32",...}
+
+# location - URL 信息
+result = ctx.evaluate("""
+    JSON.stringify({
+        href: location.href,
+        protocol: location.protocol,
+        hostname: location.hostname,
+        pathname: location.pathname
+    })
+""")
+
+# document - DOM 文档对象
+result = ctx.evaluate("""
+    JSON.stringify({
+        readyState: document.readyState,
+        title: document.title,
+        URL: document.URL,
+        domain: document.domain,
+        characterSet: document.characterSet
+    })
+""")
+
+# window - 窗口对象
+result = ctx.evaluate("""
+    JSON.stringify({
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio
+    })
+""")
+
+# screen - 屏幕信息
+result = ctx.evaluate("""
+    JSON.stringify({
+        width: screen.width,
+        height: screen.height,
+        colorDepth: screen.colorDepth
+    })
+""")
+```
+
+**可用对象**：
+- `navigator` - 浏览器用户代理信息
+- `location` - 页面 URL 信息
+- `document` - DOM 文档对象（方法返回 null/空数组）
+- `window` - 窗口对象
+- `screen` - 屏幕信息
+
+### 5. URL / URLSearchParams
+
+完整的 URL 处理 API：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+# URL 解析
+result = ctx.evaluate("""
+    const url = new URL('https://api.example.com:8080/search?q=test&page=1#results');
+
+    JSON.stringify({
+        href: url.href,
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port,
+        pathname: url.pathname,
+        search: url.search,
+        hash: url.hash,
+        origin: url.origin
+    })
+""")
+
+# URLSearchParams - 查询字符串操作
+result = ctx.evaluate("""
+    const params = new URLSearchParams('name=John&age=30');
+
+    // 获取参数
+    const name = params.get('name');  // "John"
+
+    // 设置参数
+    params.set('age', '31');
+
+    // 追加参数
+    params.append('tag', 'developer');
+    params.append('tag', 'python');
+
+    // 获取所有同名参数
+    const tags = params.getAll('tag');  // ["developer", "python"]
+
+    // 转回查询字符串
+    const queryString = params.toString();  // "name=John&age=31&tag=developer&tag=python"
+
+    JSON.stringify({name, tags, queryString});
+""")
+
+# URL + URLSearchParams 组合
+result = ctx.evaluate("""
+    const url = new URL('https://api.example.com/search');
+    url.searchParams.append('q', 'javascript');
+    url.searchParams.append('limit', '10');
+
+    url.href  // "https://api.example.com/search?q=javascript&limit=10"
+""")
+```
+
+### 6. FormData
+
+表单数据处理 API：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+result = ctx.evaluate("""
+    const formData = new FormData();
+
+    // 添加字段
+    formData.append('username', 'john_doe');
+    formData.append('email', 'john@example.com');
+    formData.append('tags', 'js');
+    formData.append('tags', 'python');
+
+    // 获取单个值
+    const username = formData.get('username');  // "john_doe"
+
+    // 获取所有同名值
+    const tags = formData.getAll('tags');  // ["js", "python"]
+
+    // 设置（覆盖）
+    formData.set('email', 'new@example.com');
+
+    // 检查是否存在
+    const hasUser = formData.has('username');  // true
+
+    // 删除
+    formData.delete('tags');
+
+    JSON.stringify({username, tags, hasUser});
+""")
+```
+
+### 7. Event / EventTarget
+
+完整的事件系统：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+result = ctx.evaluate("""
+    // 创建事件目标
+    const target = new EventTarget();
+
+    let eventData = [];
+
+    // 添加事件监听器
+    target.addEventListener('custom', (event) => {
+        eventData.push({
+            type: event.type,
+            bubbles: event.bubbles,
+            cancelable: event.cancelable
+        });
+    });
+
+    // 创建并分发事件
+    const event = new Event('custom', {
+        bubbles: true,
+        cancelable: true
+    });
+
+    target.dispatchEvent(event);
+
+    // 支持 once 选项
+    target.addEventListener('once-event', () => {
+        eventData.push('fired once');
+    }, { once: true });
+
+    const onceEvent = new Event('once-event');
+    target.dispatchEvent(onceEvent);
+    target.dispatchEvent(onceEvent);  // 第二次不会触发
+
+    JSON.stringify(eventData);
+""")
+```
+
+### 8. XMLHttpRequest
+
+传统 AJAX API（基于 fetch 实现）：
+
+```python
+import never_jscore
+
+ctx = never_jscore.Context()
+
+result = ctx.evaluate("""
+    (async () => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    resolve({
+                        status: xhr.status,
+                        statusText: xhr.statusText,
+                        responseText: xhr.responseText.substring(0, 100),
+                        readyState: xhr.readyState
+                    });
+                } else {
+                    reject('Error: ' + xhr.status);
+                }
+            };
+
+            xhr.onerror = function() {
+                reject('Network error');
+            };
+
+            // 发送请求
+            xhr.open('GET', 'https://httpbin.org/get');
+            xhr.setRequestHeader('X-Custom-Header', 'value');
+            xhr.send();
+        });
+    })()
+""")
+
+print(result)
+```
+
+**支持的功能**：
+- ✅ open() / send() / abort()
+- ✅ setRequestHeader() / getResponseHeader()
+- ✅ onload / onerror / onreadystatechange 事件
+- ✅ readyState / status / statusText
+- ✅ responseText / response
+- ✅ addEventListener / removeEventListener
+
 ## 内置 Web API 扩展（v2.0+）
 
 never_jscore 内置了常用的 Web API，**无需额外 polyfill**，开箱即用！
@@ -705,18 +1140,32 @@ print(result)  # [2, 4, 6, 8, 10]
 
 ```
 src/
-├── lib.rs            # 模块入口，仅导出 Context 类
-├── context.rs        # Context 实现（V8 isolate 封装）
-├── runtime.rs        # V8/Tokio runtime 管理
-├── ops.rs            # Deno Core ops 定义
-├── convert.rs        # Python ↔ JavaScript 类型转换
-├── storage.rs        # 结果存储
-├── crypto_ops.rs     # 加密操作扩展（Base64、Hash、HMAC、Random）
-├── encoding_ops.rs   # URL 编码扩展
-├── timer_ops.rs      # 定时器扩展（setTimeout/setInterval）
-├── worker_ops.rs     # Worker API 扩展
+├── lib.rs              # 模块入口，仅导出 Context 类
+├── context.rs          # Context 实现（V8 isolate 封装）
+├── runtime.rs          # V8/Tokio runtime 管理
+├── convert.rs          # Python ↔ JavaScript 类型转换
+├── storage.rs          # 结果存储
+├── fs_ops.rs           # 文件系统操作（11 个操作）
+├── fetch_ops.rs        # HTTP 请求（基于 reqwest）
+├── crypto_ops.rs       # 加密操作扩展（Base64、Hash、HMAC、Random）
+├── encoding_ops.rs     # URL 编码扩展
+├── timer_ops.rs        # 定时器扩展（setTimeout/setInterval）
+├── worker_ops.rs       # Worker API 扩展
+├── ops/                # 新增 ops 模块
+│   ├── mod.rs         # 模块导出
+│   ├── web_storage.rs # localStorage/sessionStorage（12 个操作）
+│   └── browser_env.rs # 浏览器环境对象（9 个操作）
 └── dddd_js/
-    └── js_polyfill.js  # JavaScript polyfill 层（自动注入）
+    └── js_polyfill.js  # JavaScript polyfill 层（自动注入，1660+ 行）
+
+tests/
+├── test_all_features.py        # 完整功能测试套件
+├── test_browser_apis.py        # 浏览器 API 测试
+├── test_high_priority_apis.py  # 高优先级 API 测试
+├── test_wasm.py               # WebAssembly 测试
+├── test_async_simple.py       # 异步功能测试
+├── test_extensions.py         # 扩展 API 测试
+└── test_new_apis.py           # 新 API 测试
 ```
 
 ### 扩展系统架构
@@ -744,11 +1193,14 @@ python test_new_apis.py
 - **内存管理**: 使用 `std::mem::forget()` 避免 HandleScope 错误，每 100 次执行提示 GC
 - **扩展系统**: 基于 Deno Core extension 机制，模块化设计
 - **依赖库**:
-  - `deno_core 0.365.0`: V8 运行时
-  - `pyo3 0.27.1`: Python 绑定
+  - `deno_core 0.367.0`: V8 运行时
+  - `pyo3 0.27.1`: Python 绑定（abi3-py38）
   - `tokio 1.48`: 异步运行时
+  - `reqwest 0.12`: HTTP 客户端（支持 JSON 和 blocking）
+  - `lazy_static 1.4`: 全局状态管理（localStorage/sessionStorage）
   - `rand 0.8`: 随机数生成
   - `base64`, `md-5`, `sha1`, `sha2`, `hmac`: 加密库
+  - `urlencoding`, `percent-encoding`: URL 编解码
 
 ## 许可证
 
@@ -767,7 +1219,79 @@ MIT License
 
 ## 更新日志
 
-### v2.0.0 (2025-01)
+### v2.2.0 (2025-11-11) - 重大功能扩展
+
+#### Node.js 环境 API
+- ✨ **require()**: 完整的 CommonJS 模块系统
+  - 相对/绝对路径模块加载
+  - node_modules 递归查找
+  - package.json 主入口解析
+  - 模块缓存机制
+- ✨ **fs 模块**: 文件系统操作（readFileSync, writeFileSync, existsSync 等）
+- ✨ **path 模块**: 路径处理（resolve, join, dirname, basename 等）
+- ✨ **fetch()**: 现代 HTTP API
+  - 支持所有 HTTP 方法（GET/POST/PUT/DELETE 等）
+  - 自定义请求头
+  - JSON 自动序列化/反序列化
+  - Response/Headers 对象
+  - 超时控制
+
+#### 浏览器环境 API（补环境）
+- ✨ **localStorage/sessionStorage**: 浏览器存储 API
+  - setItem/getItem/removeItem/clear
+  - key() 和 length 属性
+  - 线程安全全局存储
+- ✨ **浏览器环境对象**:
+  - `navigator`: 用户代理、平台、语言等信息
+  - `location`: URL 解析（href, protocol, hostname 等）
+  - `document`: DOM 文档对象（readyState, title, URL 等）
+  - `window`: 窗口属性（innerWidth, innerHeight 等）
+  - `screen`: 屏幕信息（width, height, colorDepth 等）
+- ✨ **URL/URLSearchParams**: 完整的 URL 处理
+  - URL 解析和构造
+  - 查询参数操作（get/set/append/delete）
+  - 迭代器支持
+- ✨ **FormData**: 表单数据处理
+  - append/get/set/delete 方法
+  - getAll() 获取所有同名字段
+  - 迭代器支持
+- ✨ **Event/EventTarget**: 完整的事件系统
+  - Event 类（preventDefault, stopPropagation）
+  - EventTarget 类（addEventListener, removeEventListener, dispatchEvent）
+  - 事件阶段常量和选项（once, capture）
+- ✨ **XMLHttpRequest**: 传统 AJAX API
+  - 基于 fetch() 实现
+  - 完整的状态管理（UNSENT/OPENED/HEADERS_RECEIVED/LOADING/DONE）
+  - 事件处理器（onload, onerror, onreadystatechange）
+  - 请求头操作
+
+#### 新增依赖
+- `reqwest 0.12`: HTTP 客户端库（blocking 模式）
+- `lazy_static 1.4`: 全局状态管理
+
+#### 代码增量
+- **Rust 代码**: ~800 行新增代码
+  - fs_ops.rs (11 个操作)
+  - fetch_ops.rs (3 个操作)
+  - web_storage.rs (12 个操作)
+  - browser_env.rs (9 个操作)
+- **JavaScript 代码**: ~890 行新增代码
+  - require() 实现（~200 行）
+  - fetch/Response/Headers（~60 行）
+  - localStorage/sessionStorage（~50 行）
+  - URL/URLSearchParams（~160 行）
+  - FormData（~80 行）
+  - Event/EventTarget（~130 行）
+  - XMLHttpRequest（~180 行）
+  - 浏览器环境对象（~40 行）
+
+#### 测试覆盖
+- ✅ test_all_features.py: 7 个综合测试（100% 通过）
+- ✅ test_browser_apis.py: 浏览器 API 完整测试
+- ✅ test_high_priority_apis.py: 高优先级 API 测试
+- ✅ test_wasm.py: WebAssembly 验证测试
+
+### v2.0.0 (2025-11-05)
 
 #### 架构重构
 - 🔄 **架构重构**: 改为 py_mini_racer 风格的实例化 API
@@ -795,7 +1319,7 @@ MIT License
 - ⚡ 扩展模块采用 Rust 实现，性能接近原生
 - ⚡ JavaScript polyfill 层仅在必要时使用
 
-### v0.1.0 (2024-12)
+### v0.1.0 (2025-11-01)
 
 - ✅ 基于 Deno Core 的 JavaScript 执行
 - ✅ Promise/async/await 完整支持

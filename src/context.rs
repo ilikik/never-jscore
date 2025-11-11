@@ -68,6 +68,12 @@ impl Context {
             extensions.push(crate::encoding_ops::encoding_ops::init());
             extensions.push(crate::timer_ops::timer_ops::init());
             extensions.push(crate::worker_ops::worker_ops::init());
+            extensions.push(crate::fs_ops::fs_ops::init());
+            extensions.push(crate::fetch_ops::fetch_ops::init());
+
+            // 新增: 浏览器环境 API
+            extensions.push(crate::ops::web_storage::web_storage_ops::init());
+            extensions.push(crate::ops::browser_env::browser_env_ops::init());
         }
 
         let mut runtime = JsRuntime::new(RuntimeOptions {
