@@ -21,6 +21,11 @@
   - Hook XMLHttpRequest.send 拦截加密数据
   - Hook 加密函数获取中间值
   - 完美适配 JS 逆向工程场景
+- 🎲 **确定性随机数** (v2.3.0):
+  - 支持固定随机数种子（random_seed）
+  - Math.random、crypto.randomUUID、crypto.getRandomValues 全部可控
+  - 相同种子产生相同随机数序列
+  - 完美用于调试动态参数算法和可重现测试
 - 🌐 **完整 Web API 扩展** (v2.2.0):
   - ✅ **Node.js APIs**: require()、fs、path、fetch()
   - ✅ **浏览器存储**: localStorage、sessionStorage
@@ -90,6 +95,7 @@ A: PyExecJS 通过进程调用外部 JS 运行时，每次都有进程通信开�
 - [test_browser_apis.py](tests/test_browser_apis.py) - 浏览器 API 测试
 - [test_high_priority_apis.py](tests/test_high_priority_apis.py) - 高优先级 API 测试
 - [test_hook_interception.py](tests/test_hook_interception.py) - Hook拦截功能测试（v2.2.2 新增）
+- [test_random_seed.py](tests/test_random_seed.py) - 随机数种子功能测试（v2.3.0 新增）
 - [test_wasm.py](tests/test_wasm.py) - WebAssembly 测试
 - [use_polyfill.py](examples/use_polyfill.py) - Polyfill 使用示例
 
@@ -132,6 +138,19 @@ ctx = never_jscore.Context(enable_extensions=True)
 
 # 或禁用扩展（纯净 V8 环境）
 ctx = never_jscore.Context(enable_extensions=False)
+
+# 启用日志输出（调试模式，v2.2.0+）
+ctx = never_jscore.Context(enable_logging=True)
+
+# 使用固定随机数种子（确定性执行，v2.3.0+）
+ctx = never_jscore.Context(random_seed=12345)
+
+# 组合使用
+ctx = never_jscore.Context(
+    enable_extensions=True,  # 启用扩展
+    enable_logging=False,    # 关闭日志
+    random_seed=42          # 固定种子
+)
 ```
 
 ### 1. 基本用法（实例化 Context）
@@ -409,11 +428,97 @@ print(f"条件拦截结果: {result}")
 
 更多示例请查看 [hook_examples.py](examples/hook_examples.py)
 
+### 8. 确定性随机数（v2.3.0 新增）
+
+```python
+import never_jscore
+
+# 使用固定种子创建上下文（确定性执行）
+ctx = never_jscore.Context(random_seed=12345)
+
+# Math.random() 会基于种子生成确定性随机数
+result = ctx.evaluate("""
+    const r1 = Math.random();  // 0.8831156266...
+    const r2 = Math.random();  // 0.5465919174...
+    const r3 = Math.random();  // 0.2821271724...
+    [r1, r2, r3]
+""")
+print(result)  # [0.8831156266, 0.5465919174, 0.2821271724]
+
+# 使用相同种子的另一个上下文会产生相同的随机数序列
+ctx2 = never_jscore.Context(random_seed=12345)
+result2 = ctx2.evaluate("""
+    const r1 = Math.random();
+    const r2 = Math.random();
+    const r3 = Math.random();
+    [r1, r2, r3]
+""")
+print(result2)  # [0.8831156266, 0.5465919174, 0.2821271724] - 完全相同！
+
+# crypto API 也遵守种子
+ctx3 = never_jscore.Context(random_seed=99999)
+uuid1 = ctx3.evaluate("crypto.randomUUID()")
+print(uuid1)  # "a2c9d035-05e8-416d-9395-58db68d61c19"
+
+# 相同种子产生相同的 UUID
+ctx4 = never_jscore.Context(random_seed=99999)
+uuid2 = ctx4.evaluate("crypto.randomUUID()")
+print(uuid2)  # "a2c9d035-05e8-416d-9395-58db68d61c19" - 相同！
+
+# 实际应用：调试动态参数算法
+ctx5 = never_jscore.Context(random_seed=42)
+result = ctx5.evaluate("""
+    function generateToken(userId) {
+        const random1 = Math.random();
+        const random2 = Math.random();
+        const hash = Math.floor((random1 + random2 + userId) * 1000000);
+        return hash.toString(16);
+    }
+
+    generateToken(12345);
+""")
+print(result)  # "2dfe3be76"
+
+# 再次运行，结果完全相同（方便调试）
+ctx6 = never_jscore.Context(random_seed=42)
+result2 = ctx6.evaluate("""
+    function generateToken(userId) {
+        const random1 = Math.random();
+        const random2 = Math.random();
+        const hash = Math.floor((random1 + random2 + userId) * 1000000);
+        return hash.toString(16);
+    }
+
+    generateToken(12345);
+""")
+print(result2)  # "2dfe3be76" - 完全相同！
+
+# 不使用种子时，随机数是非确定性的（默认行为）
+ctx7 = never_jscore.Context()  # 无 random_seed
+random1 = ctx7.evaluate("Math.random()")
+random2 = ctx7.evaluate("Math.random()")
+print(f"非确定性: {random1} != {random2}")  # 每次运行都不同
+```
+
+**支持的随机数 API：**
+- ✅ `Math.random()` - 标准随机数（0 到 1）
+- ✅ `crypto.randomUUID()` - UUID v4 生成
+- ✅ `crypto.getRandomValues()` - 随机字节数组
+
+**使用场景：**
+- 🎯 调试包含随机数的加密算法
+- 🎯 可重现的测试用例
+- 🎯 对比不同参数下的算法行为
+- 🎯 JS 逆向中的动态参数分析
+- 🎯 Akamai 等反爬虫算法的确定性执行
+
+更多示例请查看 [test_random_seed.py](tests/test_random_seed.py)
+
 ## API 参考
 
 ### Context 类
 
-#### `never_jscore.Context(enable_extensions: bool = True)`
+#### `never_jscore.Context(enable_extensions: bool = True, enable_logging: bool = False, random_seed: int = None)`
 
 创建一个新的 JavaScript 执行上下文。
 
@@ -421,6 +526,12 @@ print(f"条件拦截结果: {result}")
 - `enable_extensions` (可选): 是否启用内置 Web API 扩展（默认 True）
   - `True`: 启用 Crypto、URL 编码、setTimeout、Worker 等扩展
   - `False`: 纯净 V8 环境，只有 ECMAScript 标准 API
+- `enable_logging` (可选): 是否启用操作日志输出（默认 False）
+  - `True`: 输出所有扩展操作的日志（用于调试）
+  - `False`: 不输出日志（推荐生产环境）
+- `random_seed` (可选): 随机数种子（默认 None）
+  - `None`: 使用系统随机数（非确定性）
+  - `int`: 使用固定种子（确定性），所有随机数 API 将基于此种子生成
 
 **返回**: Context 对象
 
@@ -432,6 +543,15 @@ ctx = never_jscore.Context(enable_extensions=True)
 
 # 禁用扩展（纯净 V8）
 ctx = never_jscore.Context(enable_extensions=False)
+
+# 启用日志（调试模式）
+ctx = never_jscore.Context(enable_logging=True)
+
+# 使用固定种子（确定性随机数）
+ctx = never_jscore.Context(random_seed=12345)
+
+# 组合使用
+ctx = never_jscore.Context(enable_extensions=True, enable_logging=False, random_seed=42)
 ```
 
 #### `compile(code: str) -> None`
@@ -1234,9 +1354,15 @@ result = ctx.evaluate("encodeURIComponent('hello world')")  # "hello%20world"
 result = ctx.evaluate("decodeURIComponent('hello%20world')")  # "hello world"
 ```
 
-### 随机数生成
+### 随机数生成（支持种子控制）
 
 ```python
+# 默认：非确定性随机数
+ctx = never_jscore.Context()
+
+# Math.random() - 标准随机数（0 到 1）
+result = ctx.evaluate("Math.random()")  # 每次不同
+
 # UUID 生成
 uuid = ctx.evaluate("crypto.randomUUID()")  # "a3111236-1431-4d0d-807e-6c7b388d4433"
 
@@ -1247,9 +1373,28 @@ result = ctx.evaluate("""
     Array.from(arr)
 """)  # [123, 45, 67, ...]
 
-# 随机浮点数
-result = ctx.evaluate("Deno.core.ops.op_crypto_random()")  # 0.123456789
+# 使用固定种子（v2.3.0 新增）- 确定性随机数
+ctx_seeded = never_jscore.Context(random_seed=12345)
+
+# 所有随机数 API 都遵守种子
+r1 = ctx_seeded.evaluate("Math.random()")  # 0.8831156266... (固定)
+uuid = ctx_seeded.evaluate("crypto.randomUUID()")  # 固定的 UUID
+random_bytes = ctx_seeded.evaluate("""
+    const arr = new Uint8Array(8);
+    crypto.getRandomValues(arr);
+    Array.from(arr)
+""")  # 固定的字节数组
+
+# 相同种子产生相同的随机数序列
+ctx_same_seed = never_jscore.Context(random_seed=12345)
+r2 = ctx_same_seed.evaluate("Math.random()")  # 0.8831156266... (与 r1 相同!)
 ```
+
+**种子控制的优势：**
+- 🎯 调试动态参数算法时可重现执行
+- 🎯 对比不同算法实现的行为差异
+- 🎯 编写可重现的单元测试
+- 🎯 分析依赖随机数的加密算法
 
 ### 定时器（立即执行版本）
 
@@ -1494,18 +1639,22 @@ src/
 ├── runtime.rs          # V8/Tokio runtime 管理
 ├── convert.rs          # Python ↔ JavaScript 类型转换
 ├── storage.rs          # 结果存储
+├── random_state.rs     # 线程本地 RNG 状态管理（v2.3.0 新增）
+├── random_ops.rs       # 随机数种子控制（v2.3.0 新增）
 ├── fs_ops.rs           # 文件系统操作（11 个操作）
-├── fetch_ops.rs        # HTTP 请求（基于 reqwest）
+├── fetch_ops.rs        # HTTP 请求（基于 reqwest，支持二进制响应）
 ├── crypto_ops.rs       # 加密操作扩展（Base64、Hash、HMAC、Random）
 ├── encoding_ops.rs     # URL 编码扩展
 ├── timer_ops.rs        # 定时器扩展（setTimeout/setInterval）
 ├── worker_ops.rs       # Worker API 扩展
+├── performance_ops.rs  # Performance API（v2.2.1 新增）
 ├── ops/                # 新增 ops 模块
 │   ├── mod.rs         # 模块导出
+│   ├── storage_ops.rs # 结果存储 ops（含 early_return，v2.2.2）
 │   ├── web_storage.rs # localStorage/sessionStorage（12 个操作）
 │   └── browser_env.rs # 浏览器环境对象（9 个操作）
 └── dddd_js/
-    └── js_polyfill.js  # JavaScript polyfill 层（自动注入，1660+ 行）
+    └── js_polyfill.js  # JavaScript polyfill 层（自动注入，2100+ 行）
 
 tests/
 ├── test_all_features.py        # 完整功能测试套件
@@ -1514,7 +1663,10 @@ tests/
 ├── test_wasm.py               # WebAssembly 测试
 ├── test_async_simple.py       # 异步功能测试
 ├── test_extensions.py         # 扩展 API 测试
-└── test_new_apis.py           # 新 API 测试
+├── test_new_apis.py           # 新 API 测试
+├── test_hook_interception.py  # Hook 拦截测试（v2.2.2）
+├── test_random_seed.py        # 随机数种子测试（v2.3.0）
+└── test_performance.py        # Performance API 测试（v2.2.1）
 ```
 
 ### 扩展系统架构
@@ -1567,6 +1719,60 @@ MIT License
 - [PyO3](https://github.com/PyO3/pyo3) - Rust Python bindings
 
 ## 更新日志
+
+### v2.3.0 (2025-11-12) - 确定性随机数与二进制数据修复
+
+#### 确定性随机数（Seedable RNG）
+- ✨ **随机数种子控制**: Context 新增 `random_seed` 参数
+  - 支持固定种子创建确定性执行环境
+  - 所有随机数 API 统一受种子控制
+  - 相同种子产生完全相同的随机数序列
+- 🎲 **支持的随机数 API**:
+  - `Math.random()`: 标准随机数（0 到 1）
+  - `crypto.randomUUID()`: UUID v4 生成
+  - `crypto.getRandomValues()`: 随机字节数组
+- 📊 **应用场景**:
+  - 调试动态参数加密算法
+  - 可重现的单元测试
+  - 对比不同算法实现的行为
+  - Akamai 等反爬虫算法的确定性执行
+
+#### 二进制数据支持修复
+- 🔧 **WASM 加载修复**: 修复 fetch() 对二进制数据的处理
+  - `fetch_ops.rs`: 改用 `response.bytes()` 代替 `response.text()`
+  - 添加 Content-Type 检测，自动识别二进制响应
+  - 二进制数据通过 Base64 编码传输（`bodyBinary` 字段）
+- 🔧 **Base64 解码修复**: 修复 `atob()` 对二进制数据的处理
+  - `crypto_ops.rs`: `op_base64_decode` 返回 Latin-1 字符串
+  - 避免 UTF-8 解码错误，正确处理二进制数据
+- 🌐 **XMLHttpRequest 增强**:
+  - 支持 `responseType="arraybuffer"`
+  - 正确提取响应头（`getResponseHeader()`）
+  - `Response.arrayBuffer()` 正确解码 Base64 二进制数据
+
+#### 技术实现
+- **新增文件**:
+  - `src/random_state.rs`: 线程本地 RNG 状态管理（~90 行）
+  - `src/random_ops.rs`: 随机数种子控制 ops（~30 行）
+  - `tests/test_random_seed.py`: 随机数种子功能测试套件（5 个测试，全部通过）
+- **修改文件**:
+  - `src/lib.rs`: 添加 random_state 和 random_ops 模块
+  - `src/crypto_ops.rs`: 所有随机函数统一使用 `random_state`
+  - `src/fetch_ops.rs`: 二进制响应处理，添加 `bodyBinary` 字段
+  - `src/context.rs`: Context 添加 `random_seed` 参数
+  - `src/dddd_js/js_polyfill.js`: 覆盖 `Math.random()`，增强 `Response.arrayBuffer()`
+  - `py_mod/never_jscore/never_jscore.pyi`: 更新类型提示
+
+#### 测试覆盖
+- ✅ 5 个随机数种子测试全部通过（100% 通过率）
+  - Math.random() 固定种子测试
+  - 不同种子产生不同随机数测试
+  - 无种子非确定性测试
+  - crypto API 种子控制测试
+  - 可重现算法对比测试
+- ✅ WASM 二进制加载测试通过
+  - 124KB WASM 模块成功加载
+  - 正确的 WASM magic bytes: `0x00 0x61 0x73 0x6d`
 
 ### v2.2.2 (2025-11-12) - Hook拦截与提前返回
 

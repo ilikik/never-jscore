@@ -135,9 +135,9 @@ pub fn op_fetch(#[string] url: String, #[string] options_json: String) -> String
         }
     }
 
-    // 读取响应体
-    let body_text = match response.text() {
-        Ok(text) => text,
+    // 读取响应体（作为字节数组以支持二进制数据）
+    let body_bytes = match response.bytes() {
+        Ok(bytes) => bytes,
         Err(e) => {
             return json!({
                 "ok": false,
@@ -145,8 +145,40 @@ pub fn op_fetch(#[string] url: String, #[string] options_json: String) -> String
                 "statusText": status_text,
                 "headers": response_headers,
                 "body": "",
+                "bodyBinary": null,
                 "error": format!("Failed to read response body: {}", e)
             }).to_string();
+        }
+    };
+
+    // 检测是否为二进制内容
+    let content_type = response_headers.get("content-type")
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    let is_binary = content_type.contains("application/octet-stream")
+        || content_type.contains("application/wasm")
+        || content_type.contains("image/")
+        || content_type.contains("video/")
+        || content_type.contains("audio/")
+        || content_type.contains("application/pdf");
+
+    // 如果是二进制内容，返回 Base64 编码
+    let (body_text, body_binary) = if is_binary {
+        // 使用 base64 crate 编码
+        use base64::{Engine as _, engine::general_purpose};
+        let body_base64 = general_purpose::STANDARD.encode(&body_bytes);
+        ("".to_string(), Some(body_base64))
+    } else {
+        // 尝试转换为文本
+        match String::from_utf8(body_bytes.to_vec()) {
+            Ok(text) => (text, None),
+            Err(_) => {
+                // 如果不是有效的 UTF-8，也作为二进制处理
+                use base64::{Engine as _, engine::general_purpose};
+                let body_base64 = general_purpose::STANDARD.encode(&body_bytes);
+                ("".to_string(), Some(body_base64))
+            }
         }
     };
 
@@ -157,6 +189,7 @@ pub fn op_fetch(#[string] url: String, #[string] options_json: String) -> String
         "statusText": status_text,
         "headers": response_headers,
         "body": body_text,
+        "bodyBinary": body_binary,
         "error": null
     }).to_string()
 }

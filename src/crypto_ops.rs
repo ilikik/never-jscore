@@ -24,11 +24,13 @@ pub fn op_base64_encode(#[string] input: String) -> String {
 #[op2]
 #[string]
 /// Base64 decode (standard encoding)
+/// 返回 Latin-1/binary 字符串（每个字节对应一个字符，charCode = 字节值）
 pub fn op_base64_decode(#[string] input: String) -> String {
     match BASE64_STANDARD.decode(&input) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(s) => s,
-            Err(e) => format!("Error: UTF-8 decode failed: {}", e),
+        Ok(bytes) => {
+            // 将字节转换为 Latin-1 字符串（每个字节 0-255 对应一个 char）
+            // 这样 JavaScript 可以通过 charCodeAt 获取原始字节值
+            bytes.iter().map(|&b| b as char).collect()
         },
         Err(e) => format!("Error: Base64 decode failed: {}", e),
     }
@@ -173,12 +175,9 @@ pub fn op_hex_decode(#[string] input: String) -> String {
 #[string]
 /// Generate a random UUID v4
 pub fn op_crypto_random_uuid() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-
     // Generate 16 random bytes
     let mut bytes = [0u8; 16];
-    rng.fill(&mut bytes);
+    crate::random_state::fill_bytes(&mut bytes);
 
     // Set version (4) and variant bits according to RFC 4122
     bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
@@ -199,17 +198,15 @@ pub fn op_crypto_random_uuid() -> String {
 #[string]
 /// Generate random bytes as hex string (length in bytes)
 pub fn op_crypto_get_random_values(length: u32) -> String {
-    use rand::RngCore;
     let mut buf = vec![0u8; length as usize];
-    rand::thread_rng().fill_bytes(&mut buf);
+    crate::random_state::fill_bytes(&mut buf);
     hex::encode(buf)
 }
 
 #[op2(fast)]
 /// Generate a random number between 0 and 1
 pub fn op_crypto_random() -> f64 {
-    use rand::Rng;
-    rand::thread_rng().gen::<f64>()
+    crate::random_state::random_f64()
 }
 
 // ============================================

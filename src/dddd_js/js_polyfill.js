@@ -18,6 +18,29 @@ function log(...args) {
 log('never-jscore polyfill loading...');
 
 // ============================================
+// Random Number Generation (Support seeded RNG)
+// ============================================
+
+// Override Math.random() to use op_crypto_random (which supports seeding)
+if (typeof Math !== 'undefined' && typeof Deno !== 'undefined' && Deno.core.ops.op_crypto_random) {
+    const originalMathRandom = Math.random;
+    Math.random = function() {
+        try {
+            return Deno.core.ops.op_crypto_random();
+        } catch (e) {
+            // Fallback to original if op fails
+            return originalMathRandom.call(Math);
+        }
+    };
+    log('Math.random() overridden with seeded RNG support');
+}
+
+// Expose cryptoRandom as alias
+globalThis.cryptoRandom = function() {
+    return Deno.core.ops.op_crypto_random();
+};
+
+// ============================================
 // Base64 操作 (兼容 Web API)
 // ============================================
 
@@ -976,11 +999,6 @@ if (!crypto.getRandomValues) {
     };
 }
 
-// Math.random override using crypto random (optional)
-globalThis.cryptoRandom = function() {
-    return Deno.core.ops.op_crypto_random();
-};
-
 // ============================================
 // Fetch API polyfill
 // ============================================
@@ -991,6 +1009,7 @@ globalThis.cryptoRandom = function() {
 class Response {
     constructor(body, init = {}) {
         this._body = body;
+        this._bodyBinary = init.bodyBinary || null;  // Base64 encoded binary data
         this.status = init.status || 200;
         this.statusText = init.statusText || 'OK';
         this.ok = this.status >= 200 && this.status < 300;
@@ -1016,12 +1035,26 @@ class Response {
     }
 
     async arrayBuffer() {
+        // 如果有二进制数据（Base64 编码），解码并返回 ArrayBuffer
+        if (this._bodyBinary) {
+            try {
+                // 解码 Base64 到字节数组
+                const buffer = Buffer.from(this._bodyBinary, 'base64');
+                // 返回底层 ArrayBuffer
+                return Promise.resolve(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+            } catch (e) {
+                throw new Error('Failed to decode binary response: ' + e.message);
+            }
+        }
+
+        // 否则将文本编码为 ArrayBuffer
         const encoder = new TextEncoder();
         return Promise.resolve(encoder.encode(this._body).buffer);
     }
 
     clone() {
         return new Response(this._body, {
+            bodyBinary: this._bodyBinary,
             status: this.status,
             statusText: this.statusText,
             headers: this.headers,
@@ -1133,6 +1166,7 @@ if (typeof fetch === 'undefined') {
 
         // 构建 Response 对象
         const response = new Response(responseData.body, {
+            bodyBinary: responseData.bodyBinary,  // 添加二进制数据支持
             status: responseData.status,
             statusText: responseData.statusText,
             headers: responseData.headers,
@@ -1490,6 +1524,239 @@ Module._cache['fs'] = { exports: fs, loaded: true };
 Module._cache['path'] = { exports: path, loaded: true };
 
 // ============================================
+// crypto 模块 - Node.js compatible
+// ============================================
+
+const nodeCrypto = {
+    /**
+     * Create a hash object
+     * @param {string} algorithm - Hash algorithm (md5, sha1, sha256, sha512, sm3, etc.)
+     * @returns {Hash} Hash object
+     */
+    createHash: function(algorithm) {
+        return new Hash(algorithm);
+    },
+
+    /**
+     * Create an HMAC object
+     * @param {string} algorithm - Hash algorithm
+     * @param {string|Buffer} key - HMAC key
+     * @returns {Hmac} HMAC object
+     */
+    createHmac: function(algorithm, key) {
+        return new Hmac(algorithm, key);
+    },
+
+    /**
+     * Generate random bytes
+     * @param {number} size - Number of bytes
+     * @param {Function} callback - Optional callback (if provided, async)
+     * @returns {Buffer|undefined} Buffer of random bytes (sync) or undefined (async)
+     */
+    randomBytes: function(size, callback) {
+        // op_crypto_get_random_values returns hex string
+        const hexString = Deno.core.ops.op_crypto_get_random_values(size);
+
+        // Convert hex string to Buffer
+        const buf = Buffer.from(hexString, 'hex');
+
+        if (callback) {
+            // Async mode
+            setTimeout(() => callback(null, buf), 0);
+            return undefined;
+        }
+
+        // Sync mode
+        return buf;
+    },
+
+    /**
+     * Generate random UUID
+     * @returns {string} UUID string
+     */
+    randomUUID: function() {
+        return Deno.core.ops.op_crypto_random_uuid();
+    },
+
+    /**
+     * Crypto constants (partial implementation)
+     */
+    constants: {
+        // OpenSSL constants placeholder
+    }
+};
+
+/**
+ * Hash class - Node.js compatible
+ */
+class Hash {
+    constructor(algorithm) {
+        this._algorithm = algorithm.toLowerCase().replace(/-/g, '');
+        this._data = '';
+    }
+
+    /**
+     * Update hash with data
+     * @param {string|Buffer} data - Data to hash
+     * @param {string} inputEncoding - Input encoding (optional)
+     * @returns {Hash} this for chaining
+     */
+    update(data, inputEncoding) {
+        if (Buffer.isBuffer(data)) {
+            this._data += data.toString('utf8');
+        } else if (typeof data === 'string') {
+            this._data += data;
+        } else {
+            this._data += String(data);
+        }
+        return this;
+    }
+
+    /**
+     * Calculate final digest
+     * @param {string} encoding - Output encoding ('hex', 'base64', 'buffer', etc.)
+     * @returns {string|Buffer} Hash digest
+     */
+    digest(encoding) {
+        let result;
+
+        // Map algorithms to available ops
+        switch (this._algorithm) {
+            case 'md5':
+                result = Deno.core.ops.op_md5(this._data);
+                break;
+            case 'sha1':
+                result = Deno.core.ops.op_sha1(this._data);
+                break;
+            case 'sha256':
+                result = Deno.core.ops.op_sha256(this._data);
+                break;
+            case 'sha512':
+                result = Deno.core.ops.op_sha512(this._data);
+                break;
+            case 'sm3':
+                // SM3 not directly supported, fallback to SHA256
+                console.warn('[crypto] SM3 not supported, using SHA256 as fallback');
+                result = Deno.core.ops.op_sha256(this._data);
+                break;
+            default:
+                throw new Error(`Digest method ${this._algorithm} not supported`);
+        }
+
+        // result is hex string by default
+        if (!encoding || encoding === 'hex') {
+            return result;
+        } else if (encoding === 'base64') {
+            // Convert hex to buffer then to base64
+            const buf = Buffer.from(result, 'hex');
+            return buf.toString('base64');
+        } else if (encoding === 'buffer' || encoding === 'binary') {
+            // Return Buffer
+            return Buffer.from(result, 'hex');
+        } else if (encoding === 'latin1') {
+            const buf = Buffer.from(result, 'hex');
+            return buf.toString('latin1');
+        } else {
+            // Default to hex
+            return result;
+        }
+    }
+
+    /**
+     * Copy the hash object
+     * @returns {Hash} New hash object with same state
+     */
+    copy() {
+        const newHash = new Hash(this._algorithm);
+        newHash._data = this._data;
+        return newHash;
+    }
+}
+
+/**
+ * Hmac class - Node.js compatible
+ */
+class Hmac {
+    constructor(algorithm, key) {
+        this._algorithm = algorithm.toLowerCase().replace(/-/g, '');
+        this._key = Buffer.isBuffer(key) ? key.toString('utf8') : String(key);
+        this._data = '';
+    }
+
+    /**
+     * Update HMAC with data
+     * @param {string|Buffer} data - Data to hash
+     * @param {string} inputEncoding - Input encoding (optional)
+     * @returns {Hmac} this for chaining
+     */
+    update(data, inputEncoding) {
+        if (Buffer.isBuffer(data)) {
+            this._data += data.toString('utf8');
+        } else if (typeof data === 'string') {
+            this._data += data;
+        } else {
+            this._data += String(data);
+        }
+        return this;
+    }
+
+    /**
+     * Calculate final HMAC digest
+     * @param {string} encoding - Output encoding ('hex', 'base64', 'buffer', etc.)
+     * @returns {string|Buffer} HMAC digest
+     */
+    digest(encoding) {
+        let result;
+
+        // Map algorithms to available ops
+        switch (this._algorithm) {
+            case 'md5':
+                result = Deno.core.ops.op_hmac_md5(this._key, this._data);
+                break;
+            case 'sha1':
+                result = Deno.core.ops.op_hmac_sha1(this._key, this._data);
+                break;
+            case 'sha256':
+                result = Deno.core.ops.op_hmac_sha256(this._key, this._data);
+                break;
+            case 'sha512':
+                // HMAC-SHA512 not directly supported, use SHA256 as fallback
+                console.warn('[crypto] HMAC-SHA512 not supported, using HMAC-SHA256 as fallback');
+                result = Deno.core.ops.op_hmac_sha256(this._key, this._data);
+                break;
+            case 'sm3':
+                // SM3 not supported, fallback to SHA256
+                console.warn('[crypto] HMAC-SM3 not supported, using HMAC-SHA256 as fallback');
+                result = Deno.core.ops.op_hmac_sha256(this._key, this._data);
+                break;
+            default:
+                throw new Error(`HMAC digest method ${this._algorithm} not supported`);
+        }
+
+        // result is hex string by default
+        if (!encoding || encoding === 'hex') {
+            return result;
+        } else if (encoding === 'base64') {
+            const buf = Buffer.from(result, 'hex');
+            return buf.toString('base64');
+        } else if (encoding === 'buffer' || encoding === 'binary') {
+            return Buffer.from(result, 'hex');
+        } else if (encoding === 'latin1') {
+            const buf = Buffer.from(result, 'hex');
+            return buf.toString('latin1');
+        } else {
+            return result;
+        }
+    }
+}
+
+// Export crypto as a built-in module (use nodeCrypto to avoid conflict with global crypto)
+Module._cache['crypto'] = { exports: nodeCrypto, loaded: true };
+
+log('crypto module loaded (Node.js compatible)');
+
+
+// ============================================
 // localStorage / sessionStorage
 // ============================================
 
@@ -1550,40 +1817,113 @@ if (typeof localStorage === 'undefined') {
 // Browser Environment (navigator, location, document, window, screen)
 // ============================================
 
+// Helper function: 创建可配置、可写的对象（支持 hook 和重写）
+function createConfigurableObject(data) {
+    const obj = {};
+    for (const key in data) {
+        if (data.hasOwnProperty(key)) {
+            const value = data[key];
+            // 使用 defineProperty 设置为可写、可配置
+            Object.defineProperty(obj, key, {
+                value: value,
+                writable: true,        // 可写：支持 navigator.userAgent = '...'
+                configurable: true,    // 可配置：支持 Object.defineProperty(navigator, 'userAgent', {...})
+                enumerable: true       // 可枚举：for...in 可遍历
+            });
+        }
+    }
+    return obj;
+}
+
 if (typeof navigator === 'undefined') {
     const navigatorData = JSON.parse(Deno.core.ops.op_get_navigator());
-    globalThis.navigator = navigatorData;
+    // 创建可配置对象，支持修改和 hook
+    globalThis.navigator = createConfigurableObject(navigatorData);
 }
 
 if (typeof location === 'undefined') {
     const locationData = JSON.parse(Deno.core.ops.op_get_location('https://example.com/'));
-    globalThis.location = locationData;
+    globalThis.location = createConfigurableObject(locationData);
 }
 
 if (typeof document === 'undefined') {
     const docProps = JSON.parse(Deno.core.ops.op_get_document_props());
-    globalThis.document = Object.assign({
-        getElementById: () => null,
-        getElementsByClassName: () => [],
-        getElementsByTagName: () => [],
-        querySelector: () => null,
-        querySelectorAll: () => [],
-        createElement: (tag) => ({ tagName: tag.toUpperCase(), nodeName: tag.toUpperCase() }),
-        addEventListener: () => {},
-        removeEventListener: () => {}
-    }, docProps);
+    // document 需要包含方法
+    const document = createConfigurableObject(docProps);
+
+    // 添加 DOM 方法（也设置为可配置，支持 hook）
+    Object.defineProperty(document, 'getElementById', {
+        value: () => null,
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'getElementsByClassName', {
+        value: () => [],
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'getElementsByTagName', {
+        value: () => [],
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'querySelector', {
+        value: () => null,
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'querySelectorAll', {
+        value: () => [],
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'createElement', {
+        value: (tag) => ({ tagName: tag.toUpperCase(), nodeName: tag.toUpperCase() }),
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'addEventListener', {
+        value: () => {},
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+    Object.defineProperty(document, 'removeEventListener', {
+        value: () => {},
+        writable: true,
+        configurable: true,
+        enumerable: false
+    });
+
+    globalThis.document = document;
 }
 
 if (typeof window === 'undefined') {
     globalThis.window = globalThis;
 }
 
+// window 属性也设置为可配置
 const windowProps = JSON.parse(Deno.core.ops.op_get_window_props());
-Object.assign(globalThis, windowProps);
+for (const key in windowProps) {
+    if (windowProps.hasOwnProperty(key)) {
+        Object.defineProperty(globalThis, key, {
+            value: windowProps[key],
+            writable: true,
+            configurable: true,
+            enumerable: true
+        });
+    }
+}
 
 if (typeof screen === 'undefined') {
     const screenData = JSON.parse(Deno.core.ops.op_get_screen());
-    globalThis.screen = screenData;
+    globalThis.screen = createConfigurableObject(screenData);
 }
 
 // Enhanced Console (if needed)
@@ -2076,16 +2416,38 @@ if (typeof XMLHttpRequest === 'undefined') {
                     this.statusText = response.statusText || '';
                     this.responseURL = this._url;
 
+                    // 提取响应头
+                    if (response.headers && response.headers.forEach) {
+                        response.headers.forEach((value, name) => {
+                            this._headers[name.toLowerCase()] = value;
+                        });
+                    }
+
                     this.readyState = this.HEADERS_RECEIVED;
                     this._triggerEvent('readystatechange');
 
                     this.readyState = this.LOADING;
                     this._triggerEvent('readystatechange');
 
-                    // 读取响应体
-                    const text = await response.text();
-                    this.responseText = text;
-                    this.response = text;
+                    // 读取响应体（根据 responseType）
+                    if (this.responseType === 'arraybuffer') {
+                        const arrayBuffer = await response.arrayBuffer();
+                        this.response = arrayBuffer;
+                        this.responseText = '';  // arraybuffer 类型时 responseText 为空
+                    } else if (this.responseType === 'json') {
+                        const json = await response.json();
+                        this.response = json;
+                        this.responseText = JSON.stringify(json);
+                    } else if (this.responseType === 'blob') {
+                        const blob = await response.blob();
+                        this.response = blob;
+                        this.responseText = '';
+                    } else {
+                        // 默认为 'text' 或 ''
+                        const text = await response.text();
+                        this.responseText = text;
+                        this.response = text;
+                    }
 
                     this.readyState = this.DONE;
                     this._triggerEvent('readystatechange');

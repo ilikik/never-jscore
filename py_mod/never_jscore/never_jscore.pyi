@@ -50,7 +50,7 @@ class Context:
         >>> # 只有 ECMAScript 标准 API
     """
 
-    def __init__(self, enable_extensions: bool = True,enable_logging: bool = False) -> None:
+    def __init__(self, enable_extensions: bool = True, enable_logging: bool = False, random_seed: Optional[int] = None) -> None:
         """
         创建一个新的 JavaScript 执行上下文
 
@@ -58,6 +58,24 @@ class Context:
             enable_extensions: 是否启用扩展（crypto, encoding 等），默认 True
                              - True: 自动加载 btoa/atob/md5/sha256 等函数
                              - False: 纯净 V8 环境，只包含 ECMAScript 标准 API
+            enable_logging: 是否启用操作日志输出，默认 False
+                           - True: 输出所有扩展操作的日志（用于调试）
+                           - False: 不输出日志（推荐生产环境）
+            random_seed: 随机数种子（可选），用于确定性随机数生成
+                        - None: 使用系统随机数（非确定性）
+                        - int: 使用固定种子（确定性）
+                          所有随机数 API（Math.random、crypto.getRandomValues 等）
+                          将基于此种子生成，方便调试和算法对比
+
+        Example:
+            >>> # 使用固定随机数种子
+            >>> ctx = Context(random_seed=12345)
+            >>> r1 = ctx.evaluate("Math.random()")  # 确定性随机数
+            >>> r2 = ctx.evaluate("Math.random()")  # 下一个确定性随机数
+            >>>
+            >>> # 另一个相同种子的上下文将产生相同的随机数序列
+            >>> ctx2 = Context(random_seed=12345)
+            >>> r3 = ctx2.evaluate("Math.random()")  # r3 == r1
         """
         ...
 

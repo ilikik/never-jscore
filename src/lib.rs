@@ -11,6 +11,8 @@ mod worker_ops;
 mod fs_ops;
 mod fetch_ops;
 mod performance_ops;
+mod random_state;  // New: Seedable RNG state management
+mod random_ops;     // New: Random seed control operations
 
 use pyo3::prelude::*;
 

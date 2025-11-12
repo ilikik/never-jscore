@@ -56,7 +56,8 @@ impl Context {
     /// # Arguments
     /// * `enable_extensions` - 是否启用扩展（crypto, encoding 等）
     /// * `enable_logging` - 是否启用操作日志输出
-    pub fn new(enable_extensions: bool, enable_logging: bool) -> PyResult<Self> {
+    /// * `random_seed` - 随机数种子（可选）。如果提供，所有随机数 API 将使用固定种子
+    pub fn new(enable_extensions: bool, enable_logging: bool, random_seed: Option<u32>) -> PyResult<Self> {
         let storage = Rc::new(ResultStorage::new());
 
         let mut extensions = vec![
@@ -66,6 +67,7 @@ impl Context {
 
         // 根据参数决定是否加载扩展
         if enable_extensions {
+            extensions.push(crate::random_ops::random_ops::init());  // Random seed control (always loaded with extensions)
             extensions.push(crate::crypto_ops::crypto_ops::init());
             extensions.push(crate::encoding_ops::encoding_ops::init());
             // Use real async timers instead of fake ones
@@ -87,6 +89,11 @@ impl Context {
 
         // 如果启用扩展，自动注入 JavaScript polyfill
         if enable_extensions {
+            // Set random seed if provided
+            if let Some(seed) = random_seed {
+                crate::random_state::set_random_seed(seed as u64);
+            }
+
             // Set logging flag in global scope before loading polyfill
             let logging_flag = if enable_logging { "true" } else { "false" };
             let logging_setup = format!("globalThis.__NEVER_JSCORE_LOGGING__ = {};", logging_flag);
@@ -360,6 +367,11 @@ impl Context {
     ///     enable_logging: 是否启用操作日志输出，默认 False
     ///                     - True: 输出所有扩展操作的日志（用于调试）
     ///                     - False: 不输出日志（推荐生产环境）
+    ///     random_seed: 随机数种子（可选），用于确定性随机数生成
+    ///                  - None: 使用系统随机数（非确定性）
+    ///                  - int: 使用固定种子（确定性）
+    ///                    所有随机数 API（Math.random、crypto.getRandomValues 等）
+    ///                    将基于此种子生成，方便调试和算法对比
     ///
     /// Example:
     ///     ```python
@@ -375,12 +387,21 @@ impl Context {
     ///
     ///     # 创建带日志的上下文（用于调试）
     ///     ctx_debug = never_jscore.Context(enable_logging=True)
+    ///
+    ///     # 创建带固定随机数种子的上下文（用于调试和算法对比）
+    ///     ctx_seeded = never_jscore.Context(random_seed=12345)
+    ///     r1 = ctx_seeded.evaluate("Math.random()")  # 确定性随机数
+    ///     r2 = ctx_seeded.evaluate("Math.random()")  # 下一个确定性随机数
+    ///
+    ///     # 另一个相同种子的上下文将产生相同的随机数序列
+    ///     ctx_seeded2 = never_jscore.Context(random_seed=12345)
+    ///     r3 = ctx_seeded2.evaluate("Math.random()")  # r3 == r1
     ///     ```
     #[new]
-    #[pyo3(signature = (enable_extensions=true, enable_logging=false))]
-    fn py_new(enable_extensions: bool, enable_logging: bool) -> PyResult<Self> {
+    #[pyo3(signature = (enable_extensions=true, enable_logging=false, random_seed=None))]
+    fn py_new(enable_extensions: bool, enable_logging: bool, random_seed: Option<u32>) -> PyResult<Self> {
         crate::runtime::ensure_v8_initialized();
-        Self::new(enable_extensions, enable_logging)
+        Self::new(enable_extensions, enable_logging, random_seed)
     }
 
     /// 编译JavaScript代码（便捷方法）
